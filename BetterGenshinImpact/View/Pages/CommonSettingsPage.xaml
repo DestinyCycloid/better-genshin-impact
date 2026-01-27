@@ -1824,6 +1824,256 @@
             </StackPanel>
         </ui:CardExpander>
 
+        <!--  手柄输入配置  -->
+        <ui:CardExpander Margin="0,0,0,12"
+                         ContentPadding="0"
+                         Icon="{ui:SymbolIcon XboxController24}">
+            <ui:CardExpander.Header>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="手柄输入模拟"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="配置虚拟手柄输入模式和按键映射"
+                                  TextWrapping="Wrap" />
+                </Grid>
+            </ui:CardExpander.Header>
+            <StackPanel>
+                <!--  输入模式选择  -->
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="输入模式"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  TextWrapping="Wrap">
+                        选择输入模拟方式：键鼠模式使用传统键盘鼠标模拟，手柄模式通过虚拟 XInput 设备发送输入（需要安装 
+                        <Hyperlink Command="{Binding OpenViGEmBusDownloadCommand}" Foreground="{ui:ThemeResource TextFillColorSecondaryBrush}">
+                            ViGEmBus 驱动
+                        </Hyperlink>）
+                    </ui:TextBlock>
+                    <ComboBox Grid.Row="0"
+                              Grid.RowSpan="2"
+                              Grid.Column="1"
+                              MinWidth="120"
+                              Margin="0,0,36,0"
+                              ItemsSource="{Binding InputModes}"
+                              SelectedValue="{Binding Config.InputMode, Mode=TwoWay}"
+                              DisplayMemberPath="Value"
+                              SelectedValuePath="Key" />
+                </Grid>
+
+                <!--  镜头灵敏度  -->
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="镜头灵敏度"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="调整右摇杆控制镜头的灵敏度（0.1-5.0）"
+                                  TextWrapping="Wrap" />
+                    <Slider Grid.Row="0"
+                            Grid.Column="1"
+                            Width="200"
+                            Margin="0,0,12,0"
+                            VerticalAlignment="Center"
+                            Minimum="0.1"
+                            Maximum="5.0"
+                            TickFrequency="0.1"
+                            IsSnapToTickEnabled="True"
+                            Value="{Binding Config.GamepadBindingsConfig.CameraSensitivity, Mode=TwoWay}" />
+                    <TextBlock Grid.Row="0"
+                               Grid.Column="2"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Left"
+                               Margin="0,0,36,0"
+                               FontFamily="Cascadia Mono, Consolas, Courier New, monospace"
+                               FontSize="14"
+                               MinWidth="40"
+                               Text="{Binding Config.GamepadBindingsConfig.CameraSensitivity, StringFormat=F1}" />
+                </Grid>
+
+                <!--  移动摇杆死区  -->
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="移动摇杆死区"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="左摇杆的死区大小，避免轻微输入导致移动（0.0-0.5）"
+                                  TextWrapping="Wrap" />
+                    <Slider Grid.Row="0"
+                            Grid.Column="1"
+                            Width="200"
+                            Margin="0,0,12,0"
+                            VerticalAlignment="Center"
+                            Minimum="0.0"
+                            Maximum="0.5"
+                            TickFrequency="0.05"
+                            IsSnapToTickEnabled="True"
+                            Value="{Binding Config.GamepadBindingsConfig.MovementDeadZone, Mode=TwoWay}" />
+                    <TextBlock Grid.Row="0"
+                               Grid.Column="2"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Left"
+                               Margin="0,0,36,0"
+                               FontFamily="Cascadia Mono, Consolas, Courier New, monospace"
+                               FontSize="14"
+                               MinWidth="40"
+                               Text="{Binding Config.GamepadBindingsConfig.MovementDeadZone, StringFormat=F2}" />
+                </Grid>
+
+                <!--  镜头摇杆死区  -->
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="镜头摇杆死区"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="右摇杆的死区大小，避免轻微输入导致镜头抖动（0.0-0.5）"
+                                  TextWrapping="Wrap" />
+                    <Slider Grid.Row="0"
+                            Grid.Column="1"
+                            Width="200"
+                            Margin="0,0,12,0"
+                            VerticalAlignment="Center"
+                            Minimum="0.0"
+                            Maximum="0.5"
+                            TickFrequency="0.05"
+                            IsSnapToTickEnabled="True"
+                            Value="{Binding Config.GamepadBindingsConfig.CameraDeadZone, Mode=TwoWay}" />
+                    <TextBlock Grid.Row="0"
+                               Grid.Column="2"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Left"
+                               Margin="0,0,36,0"
+                               FontFamily="Cascadia Mono, Consolas, Courier New, monospace"
+                               FontSize="14"
+                               MinWidth="40"
+                               Text="{Binding Config.GamepadBindingsConfig.CameraDeadZone, StringFormat=F2}" />
+                </Grid>
+
+                <!--  按键映射配置按钮  -->
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="手柄按键映射"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="配置游戏动作到手柄按钮的映射关系"
+                                  TextWrapping="Wrap" />
+                    <ui:Button Grid.Row="0"
+                               Grid.RowSpan="2"
+                               Grid.Column="1"
+                               Margin="0,0,36,0"
+                               Command="{Binding OpenGamepadBindingsWindowCommand}"
+                               Content="配置映射" />
+                </Grid>
+
+                <!--  驱动安装指引  -->
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="ViGEmBus 驱动安装"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  TextWrapping="Wrap">
+                        使用手柄模式需要安装 ViGEmBus 虚拟手柄驱动，
+                        <Hyperlink Command="{Binding OpenViGEmBusDownloadCommand}" Foreground="{ui:ThemeResource TextFillColorSecondaryBrush}">
+                            点击下载驱动
+                        </Hyperlink>
+                    </ui:TextBlock>
+                    <ui:Button Grid.Row="0"
+                               Grid.RowSpan="2"
+                               Grid.Column="1"
+                               Margin="0,0,36,0"
+                               Command="{Binding OpenViGEmBusInstallGuideCommand}"
+                               Content="安装指南" />
+                </Grid>
+            </StackPanel>
+        </ui:CardExpander>
+
         <!--  About Option  -->
         <ui:CardControl Margin="0,0,0,12" Icon="{ui:SymbolIcon Info24}">
             <ui:CardControl.Header>

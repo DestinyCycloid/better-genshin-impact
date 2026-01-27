@@ -1,5 +1,6 @@
 ﻿using BetterGenshinImpact.Core.Recognition;
 using BetterGenshinImpact.Core.Simulator;
+using BetterGenshinImpact.Core.Simulator.Extensions;
 using BetterGenshinImpact.GameTask.AutoPick.Assets;
 using BetterGenshinImpact.GameTask.Common.Element.Assets;
 using BetterGenshinImpact.GameTask.Model.Area;
@@ -172,7 +173,7 @@ public static partial class Bv
     {
         if (FindF(captureRa, text))
         {
-            Simulation.SendInput.Keyboard.KeyPress(AutoPickAssets.Instance.PickVk);
+            Simulation.SimulateAction(GIActions.PickUpOrInteract);
             return true;
         }
 
@@ -183,7 +184,7 @@ public static partial class Bv
     {
         if (FindF(captureRa, text))
         {
-            keyboard.KeyPress(AutoPickAssets.Instance.PickVk);
+            Simulation.SimulateAction(GIActions.PickUpOrInteract);
             return true;
         }
 

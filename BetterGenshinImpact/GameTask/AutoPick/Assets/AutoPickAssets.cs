@@ -14,6 +14,7 @@ public class AutoPickAssets : BaseAssets<AutoPickAssets>
     private readonly ILogger<AutoPickAssets> _logger = App.GetLogger<AutoPickAssets>();
 
     public RecognitionObject FRo;
+    public RecognitionObject YRo; // 手柄Y按钮
     public RecognitionObject ChatIconRo;
     public RecognitionObject SettingsIconRo;
     public RecognitionObject LRo;
@@ -35,6 +36,21 @@ public class AutoPickAssets : BaseAssets<AutoPickAssets>
                 (int)(60 * AssetScale),
                 (int)(420 * AssetScale)),
             DrawOnWindow = false
+        }.InitTemplate();
+
+        // 手柄Y按钮识别对象（位于屏幕中间偏右，拾取提示位置）
+        YRo = new RecognitionObject
+        {
+            Name = "Y",
+            RecognitionType = RecognitionTypes.TemplateMatch,
+            TemplateImageMat = GameTaskManager.LoadAssetImage("AutoPick", "Y.png"),
+            RegionOfInterest = new Rect((int)(900 * AssetScale),   // X=900开始（1080p坐标，对应4K的1800）
+                (int)(400 * AssetScale),  // Y=400开始
+                (int)(400 * AssetScale),  // 宽度400
+                (int)(300 * AssetScale)), // 高度300
+            DrawOnWindow = true,  // 开启调试显示
+            DrawOnWindowPen = new Pen(Color.Yellow, 2),
+            Threshold = 0.7  // 使用真实截图，阈值可以适中
         }.InitTemplate();
 
         ChatIconRo = new RecognitionObject

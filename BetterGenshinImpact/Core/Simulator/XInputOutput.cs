@@ -1,0 +1,547 @@
+using System;
+using System.Threading;
+using BetterGenshinImpact.Core.Config;
+using BetterGenshinImpact.Core.Simulator.Extensions;
+using BetterGenshinImpact.GameTask;
+using BetterGenshinImpact.Helpers;
+using Microsoft.Extensions.Logging;
+using Nefarius.ViGEm.Client;
+using Nefarius.ViGEm.Client.Exceptions;
+using Nefarius.ViGEm.Client.Targets;
+using Nefarius.ViGEm.Client.Targets.Xbox360;
+using Wpf.Ui.Violeta.Controls;
+
+namespace BetterGenshinImpact.Core.Simulator;
+
+/// <summary>
+/// XInput 手柄输出适配器，通过 ViGEm 虚拟手柄驱动发送手柄输入
+/// </summary>
+public class XInputOutput : IInputOutput
+{
+    private readonly ILogger<XInputOutput> _logger = App.GetLogger<XInputOutput>();
+    private readonly GamepadBindingsConfig _bindings;
+    
+    private ViGEmClient? _client;
+    private IXbox360Controller? _controller;
+    private bool _isInitialized;
+    private int _reconnectAttempts;
+    private const int MaxReconnectAttempts = 3;
+    
+    public InputMode Mode => InputMode.XInput;
+    
+    public XInputOutput()
+    {
+        // 从全局配置获取手柄绑定配置
+        _bindings = TaskContext.Instance().Config.GamepadBindingsConfig;
+    }
+    
+    /// <summary>
+    /// 初始化虚拟手柄设备
+    /// </summary>
+    /// <returns>初始化是否成功</returns>
+    public bool Initialize()
+    {
+        if (_isInitialized)
+        {
+            _logger.LogDebug("虚拟手柄已经初始化，跳过重复初始化");
+            return true;
+        }
+        
+        try
+        {
+            _logger.LogInformation("正在初始化虚拟 XInput 手柄...");
+            
+            // 创建 ViGEm 客户端
+            _client = new ViGEmClient();
+            _logger.LogDebug("ViGEm 客户端创建成功");
+            
+            // 创建虚拟 Xbox 360 手柄
+            _controller = _client.CreateXbox360Controller();
+            _logger.LogDebug("虚拟 Xbox 360 手柄创建成功");
+            
+            // 连接手柄
+            _controller.Connect();
+            _logger.LogDebug("虚拟手柄连接成功");
+            
+            _isInitialized = true;
+            _reconnectAttempts = 0;
+            
+            _logger.LogInformation("✓ 虚拟 XInput 手柄初始化成功");
+            
+            // 显示成功提示
+            UIDispatcherHelper.Invoke(() =>
+            {
+                Toast.Success("XInput 手柄模式已启用");
+            });
+            
+            return true;
+        }
+        catch (VigemBusNotFoundException ex)
+        {
+            _logger.LogWarning(ex, "ViGEmBus 驱动未安装，无法使用 XInput 模式");
+            
+            // 显示友好的错误提示
+            UIDispatcherHelper.Invoke(() =>
+            {
+                Toast.Warning("ViGEmBus 驱动未安装\n请访问 https://github.com/nefarius/ViGEmBus/releases 下载并安装驱动");
+            });
+            
+            return false;
+        }
+        catch (VigemAlreadyConnectedException ex)
+        {
+            _logger.LogWarning(ex, "虚拟手柄已经连接，可能是之前的实例未正确释放");
+            _isInitialized = true;
+            
+            UIDispatcherHelper.Invoke(() =>
+            {
+                Toast.Information("虚拟手柄已连接");
+            });
+            
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "初始化虚拟手柄失败：{Message}", ex.Message);
+            
+            UIDispatcherHelper.Invoke(() =>
+            {
+                Toast.Error($"初始化虚拟手柄失败：{ex.Message}");
+            });
+            
+            return false;
+        }
+    }
+    
+    /// <summary>
+    /// 模拟游戏动作
+    /// </summary>
+    public void SimulateAction(GIActions action, KeyType type = KeyType.KeyPress)
+    {
+        _logger.LogInformation(">>> SimulateAction 被调用: Action={Action}, Type={Type}", action, type);
+        
+        if (!EnsureConnected())
+        {
+            _logger.LogWarning("❌ 手柄未连接，无法执行动作: {Action}", action);
+            return;
+        }
+        
+        _logger.LogInformation("✓ 手柄已连接，正在获取按键映射...");
+        
+        // 从配置中获取对应的手柄按钮映射
+        var mapping = _bindings.GetButtonMapping(action);
+        
+        if (mapping == null)
+        {
+            _logger.LogWarning("❌ 动作 {Action} 没有配置手柄按钮映射", action);
+            return;
+        }
+        
+        _logger.LogInformation("✓ 获取到映射: IsTrigger={IsTrigger}, Button={Button}, IsLeftTrigger={IsLeftTrigger}", 
+            mapping.IsTrigger, mapping.Button, mapping.IsLeftTrigger);
+        
+        try
+        {
+            if (mapping.IsTrigger)
+            {
+                // 扳机映射
+                var triggerName = mapping.IsLeftTrigger ? "LT (左扳机)" : "RT (右扳机)";
+                _logger.LogInformation("🎮 执行扳机动作: {Action} -> {Trigger} ({Type})", action, triggerName, type);
+                
+                switch (type)
+                {
+                    case KeyType.KeyPress:
+                        // 按下并释放扳机
+                        _logger.LogInformation("  → 按下扳机 (255)");
+                        if (mapping.IsLeftTrigger)
+                        {
+                            _controller!.SetSliderValue(Xbox360Slider.LeftTrigger, 255);
+                        }
+                        else
+                        {
+                            _controller!.SetSliderValue(Xbox360Slider.RightTrigger, 255);
+                        }
+                        _controller.SubmitReport();
+                        _logger.LogInformation("  → 已提交报告，等待 50ms");
+                        Thread.Sleep(50);
+                        
+                        _logger.LogInformation("  → 释放扳机 (0)");
+                        if (mapping.IsLeftTrigger)
+                        {
+                            _controller.SetSliderValue(Xbox360Slider.LeftTrigger, 0);
+                        }
+                        else
+                        {
+                            _controller.SetSliderValue(Xbox360Slider.RightTrigger, 0);
+                        }
+                        _controller.SubmitReport();
+                        _logger.LogInformation("  → 已提交报告");
+                        break;
+                        
+                    case KeyType.KeyDown:
+                        // 按下扳机
+                        _logger.LogInformation("  → 按下扳机 (255)");
+                        if (mapping.IsLeftTrigger)
+                        {
+                            _controller!.SetSliderValue(Xbox360Slider.LeftTrigger, 255);
+                        }
+                        else
+                        {
+                            _controller!.SetSliderValue(Xbox360Slider.RightTrigger, 255);
+                        }
+                        _controller.SubmitReport();
+                        _logger.LogInformation("  → 已提交报告");
+                        break;
+                        
+                    case KeyType.KeyUp:
+                        // 释放扳机
+                        _logger.LogInformation("  → 释放扳机 (0)");
+                        if (mapping.IsLeftTrigger)
+                        {
+                            _controller!.SetSliderValue(Xbox360Slider.LeftTrigger, 0);
+                        }
+                        else
+                        {
+                            _controller!.SetSliderValue(Xbox360Slider.RightTrigger, 0);
+                        }
+                        _controller.SubmitReport();
+                        _logger.LogInformation("  → 已提交报告");
+                        break;
+                }
+                
+                _logger.LogInformation("✓ 扳机动作执行完成");
+            }
+            else
+            {
+                // 按钮映射
+                var button = mapping.Button;
+                _logger.LogInformation("🎮 执行按钮动作: {Action} -> {Button} ({Type})", action, button, type);
+                
+                switch (type)
+                {
+                    case KeyType.KeyPress:
+                        // 按下并释放
+                        _logger.LogInformation("  → 按下按钮 {Button}", button);
+                        _controller!.SetButtonState(button, true);
+                        _controller.SubmitReport();
+                        _logger.LogInformation("  → 已提交报告，等待 50ms");
+                        Thread.Sleep(50); // 短暂延迟模拟真实按键
+                        
+                        _logger.LogInformation("  → 释放按钮 {Button}", button);
+                        _controller.SetButtonState(button, false);
+                        _controller.SubmitReport();
+                        _logger.LogInformation("  → 已提交报告");
+                        break;
+                        
+                    case KeyType.KeyDown:
+                        // 仅按下
+                        _logger.LogInformation("  → 按下按钮 {Button}", button);
+                        _controller!.SetButtonState(button, true);
+                        _controller.SubmitReport();
+                        _logger.LogInformation("  → 已提交报告");
+                        break;
+                        
+                    case KeyType.KeyUp:
+                        // 仅释放
+                        _logger.LogInformation("  → 释放按钮 {Button}", button);
+                        _controller!.SetButtonState(button, false);
+                        _controller.SubmitReport();
+                        _logger.LogInformation("  → 已提交报告");
+                        break;
+                }
+                
+                _logger.LogInformation("✓ 按钮动作执行完成");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ 执行手柄动作失败: {Action}", action);
+            
+            // 尝试恢复连接
+            if (!EnsureConnected())
+            {
+                UIDispatcherHelper.Invoke(() =>
+                {
+                    Toast.Warning("手柄连接丢失，正在尝试恢复...");
+                });
+            }
+        }
+    }
+    
+    /// <summary>
+    /// 设置左摇杆位置（用于移动）
+    /// </summary>
+    public void SetLeftStick(short x, short y)
+    {
+        if (!EnsureConnected())
+        {
+            return;
+        }
+        
+        try
+        {
+            _logger.LogTrace("设置左摇杆: X={X}, Y={Y}", x, y);
+            
+            _controller!.SetAxisValue(Xbox360Axis.LeftThumbX, x);
+            _controller.SetAxisValue(Xbox360Axis.LeftThumbY, y);
+            _controller.SubmitReport();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "设置左摇杆位置失败: X={X}, Y={Y}", x, y);
+            EnsureConnected(); // 尝试恢复连接
+        }
+    }
+    
+    /// <summary>
+    /// 设置右摇杆位置（用于镜头）
+    /// </summary>
+    public void SetRightStick(short x, short y)
+    {
+        if (!EnsureConnected())
+        {
+            return;
+        }
+        
+        try
+        {
+            _logger.LogTrace("设置右摇杆: X={X}, Y={Y}", x, y);
+            
+            _controller!.SetAxisValue(Xbox360Axis.RightThumbX, x);
+            _controller.SetAxisValue(Xbox360Axis.RightThumbY, y);
+            _controller.SubmitReport();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "设置右摇杆位置失败: X={X}, Y={Y}", x, y);
+            EnsureConnected(); // 尝试恢复连接
+        }
+    }
+    
+    /// <summary>
+    /// 设置左扳机压力
+    /// </summary>
+    public void SetLeftTrigger(byte value)
+    {
+        if (!EnsureConnected())
+        {
+            return;
+        }
+        
+        try
+        {
+            _logger.LogTrace("设置左扳机: {Value}", value);
+            
+            _controller!.SetSliderValue(Xbox360Slider.LeftTrigger, value);
+            _controller.SubmitReport();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "设置左扳机压力失败: {Value}", value);
+            EnsureConnected(); // 尝试恢复连接
+        }
+    }
+    
+    /// <summary>
+    /// 设置右扳机压力
+    /// </summary>
+    public void SetRightTrigger(byte value)
+    {
+        if (!EnsureConnected())
+        {
+            return;
+        }
+        
+        try
+        {
+            _logger.LogTrace("设置右扳机: {Value}", value);
+            
+            _controller!.SetSliderValue(Xbox360Slider.RightTrigger, value);
+            _controller.SubmitReport();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "设置右扳机压力失败: {Value}", value);
+            EnsureConnected(); // 尝试恢复连接
+        }
+    }
+    
+    /// <summary>
+    /// 释放所有按键/按钮，重置手柄状态
+    /// </summary>
+    public void ReleaseAll()
+    {
+        if (!_isInitialized || _controller == null)
+        {
+            return;
+        }
+        
+        try
+        {
+            // 重置所有按钮状态
+            foreach (Xbox360Button button in Enum.GetValues(typeof(Xbox360Button)))
+            {
+                if (button != default(Xbox360Button))
+                {
+                    _controller.SetButtonState(button, false);
+                }
+            }
+            
+            // 重置所有摇杆到中心位置
+            _controller.SetAxisValue(Xbox360Axis.LeftThumbX, 0);
+            _controller.SetAxisValue(Xbox360Axis.LeftThumbY, 0);
+            _controller.SetAxisValue(Xbox360Axis.RightThumbX, 0);
+            _controller.SetAxisValue(Xbox360Axis.RightThumbY, 0);
+            
+            // 重置所有扳机
+            _controller.SetSliderValue(Xbox360Slider.LeftTrigger, 0);
+            _controller.SetSliderValue(Xbox360Slider.RightTrigger, 0);
+            
+            _controller.SubmitReport();
+            
+            _logger.LogDebug("已重置所有手柄状态");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "重置手柄状态失败");
+        }
+    }
+    
+    /// <summary>
+    /// 确保手柄连接，如果断开则尝试重连
+    /// </summary>
+    /// <returns>手柄是否已连接</returns>
+    private bool EnsureConnected()
+    {
+        if (!_isInitialized || _controller == null || _client == null)
+        {
+            _logger.LogDebug("手柄未初始化");
+            return false;
+        }
+        
+        // 尝试提交一个空报告来检测连接状态
+        try
+        {
+            // 如果手柄已连接，这个操作应该成功
+            _controller.SubmitReport();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // 连接丢失，尝试重连
+            _logger.LogWarning(ex, "检测到手柄连接丢失，尝试重连... (尝试 {Attempt}/{Max})", 
+                _reconnectAttempts + 1, MaxReconnectAttempts);
+            
+            if (_reconnectAttempts >= MaxReconnectAttempts)
+            {
+                _logger.LogError("重连失败次数已达上限 ({Max})，放弃重连", MaxReconnectAttempts);
+                
+                UIDispatcherHelper.Invoke(() =>
+                {
+                    Toast.Error($"虚拟手柄连接丢失且无法恢复\n已尝试重连 {MaxReconnectAttempts} 次");
+                });
+                
+                return false;
+            }
+            
+            _reconnectAttempts++;
+            
+            try
+            {
+                // 尝试重新连接
+                _logger.LogDebug("尝试重新连接虚拟手柄...");
+                _controller.Connect();
+                
+                // 验证连接
+                _controller.SubmitReport();
+                
+                _reconnectAttempts = 0;
+                _logger.LogInformation("✓ 手柄重连成功");
+                
+                UIDispatcherHelper.Invoke(() =>
+                {
+                    Toast.Success("虚拟手柄已重新连接");
+                });
+                
+                return true;
+            }
+            catch (Exception reconnectEx)
+            {
+                _logger.LogError(reconnectEx, "手柄重连失败 (尝试 {Attempt}/{Max}): {Message}", 
+                    _reconnectAttempts, MaxReconnectAttempts, reconnectEx.Message);
+                
+                // 短暂延迟后再试
+                Thread.Sleep(100);
+                
+                // 如果这是最后一次尝试，显示错误提示
+                if (_reconnectAttempts >= MaxReconnectAttempts)
+                {
+                    UIDispatcherHelper.Invoke(() =>
+                    {
+                        Toast.Error("虚拟手柄重连失败\n请检查 ViGEmBus 驱动是否正常运行");
+                    });
+                }
+                
+                return false;
+            }
+        }
+    }
+    
+    /// <summary>
+    /// 释放资源
+    /// </summary>
+    public void Dispose()
+    {
+        if (!_isInitialized)
+        {
+            return;
+        }
+        
+        try
+        {
+            _logger.LogInformation("正在释放虚拟手柄资源...");
+            
+            // 重置手柄状态
+            ReleaseAll();
+            
+            // 断开手柄连接
+            if (_controller != null)
+            {
+                try
+                {
+                    _controller.Disconnect();
+                    _logger.LogDebug("虚拟手柄已断开连接");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "断开虚拟手柄连接时发生错误");
+                }
+            }
+            
+            // 释放客户端
+            if (_client != null)
+            {
+                try
+                {
+                    _client.Dispose();
+                    _logger.LogDebug("ViGEm 客户端已释放");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "释放 ViGEm 客户端时发生错误");
+                }
+            }
+            
+            _controller = null;
+            _client = null;
+            _isInitialized = false;
+            _reconnectAttempts = 0;
+            
+            _logger.LogInformation("✓ 虚拟手柄资源已释放");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "释放虚拟手柄资源时发生错误: {Message}", ex.Message);
+        }
+    }
+}

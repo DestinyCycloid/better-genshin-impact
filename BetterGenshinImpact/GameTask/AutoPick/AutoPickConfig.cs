@@ -30,6 +30,21 @@ namespace BetterGenshinImpact.GameTask.AutoPick
         [ObservableProperty] private int _itemTextRightOffset = 400;
 
         /// <summary>
+        /// 1080p下手柄Y按钮图标左边的起始偏移
+        /// </summary>
+        [ObservableProperty] private int _gamepadItemIconLeftOffset = 40;
+
+        /// <summary>
+        /// 1080p下手柄Y按钮文字的起始偏移
+        /// </summary>
+        [ObservableProperty] private int _gamepadItemTextLeftOffset = 95;
+
+        /// <summary>
+        /// 1080p下手柄Y按钮文字的终止偏移
+        /// </summary>
+        [ObservableProperty] private int _gamepadItemTextRightOffset = 380;
+
+        /// <summary>
         /// 文字识别引擎
         /// - Paddle
         /// - Yap

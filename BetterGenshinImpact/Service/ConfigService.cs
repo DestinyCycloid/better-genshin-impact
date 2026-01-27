@@ -23,6 +23,8 @@ public class ConfigService : IConfigService
         {
             new OpenCvPointJsonConverter(),
             new OpenCvRectJsonConverter(),
+            new Xbox360ButtonJsonConverter(),
+            new GamepadButtonMappingJsonConverter(),
         },
         WriteIndented = true,
         AllowTrailingCommas = true,

@@ -9,6 +9,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using BetterGenshinImpact.Core.Simulator;
+using BetterGenshinImpact.Core.Simulator.Extensions;
 using BetterGenshinImpact.GameTask.AutoPick.Assets;
 using BetterGenshinImpact.GameTask.Common.Element.Assets;
 using Vanara.PInvoke;
@@ -180,7 +181,7 @@ public class GoToAdventurersGuildTask
             using var ra = CaptureToRectArea();
             if (!Bv.IsInTalkUi(ra))
             {
-                Simulation.SendInput.Keyboard.KeyPress(AutoPickAssets.Instance.PickVk);
+                Simulation.SimulateAction(GIActions.PickUpOrInteract);
                 await Delay(500, ct);
 
                 if (i == retryTalkTimes - 1)

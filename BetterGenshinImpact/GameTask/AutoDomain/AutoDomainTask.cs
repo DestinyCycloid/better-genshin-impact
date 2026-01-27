@@ -327,7 +327,7 @@ public class AutoDomainTask : ISoloTask
 
                 var menu = await NewRetry.WaitForElementAppear(
                     GetConfirmRa("单人挑战"),
-                    () => Simulation.SendInput.Keyboard.KeyPress(AutoPickAssets.Instance.PickVk),
+                    () => Simulation.SimulateAction(GIActions.PickUpOrInteract),
                     _ct,
                     20,
                     500
@@ -368,7 +368,7 @@ public class AutoDomainTask : ISoloTask
 
         var menuFound = await NewRetry.WaitForElementAppear(
             GetConfirmRa("单人挑战"),
-            () => Simulation.SendInput.Keyboard.KeyPress(AutoPickAssets.Instance.PickVk),
+            () => Simulation.SimulateAction(GIActions.PickUpOrInteract),
             _ct,
             10,
             1000
@@ -612,7 +612,7 @@ public class AutoDomainTask : ISoloTask
                     else
                     {
                         Logger.LogInformation("检测到交互键");
-                        Simulation.SendInput.Keyboard.KeyPress(AutoPickAssets.Instance.PickVk);
+                        Simulation.SimulateAction(GIActions.PickUpOrInteract);
                         break;
                     }
 

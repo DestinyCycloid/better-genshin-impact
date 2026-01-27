@@ -275,23 +275,23 @@ public class Avatar
 
     private void SimulateSwitchAction(int index)
     {
-        Simulation.SendInput.SimulateAction(GIActions.Drop); //反正会重试就不等落地了
+        Simulation.SimulateAction(GIActions.Drop); //反正会重试就不等落地了
         switch (index)
         {
             case 1:
-                Simulation.SendInput.SimulateAction(GIActions.SwitchMember1);
+                Simulation.SimulateAction(GIActions.SwitchMember1);
                 break;
             case 2:
-                Simulation.SendInput.SimulateAction(GIActions.SwitchMember2);
+                Simulation.SimulateAction(GIActions.SwitchMember2);
                 break;
             case 3:
-                Simulation.SendInput.SimulateAction(GIActions.SwitchMember3);
+                Simulation.SimulateAction(GIActions.SwitchMember3);
                 break;
             case 4:
-                Simulation.SendInput.SimulateAction(GIActions.SwitchMember4);
+                Simulation.SimulateAction(GIActions.SwitchMember4);
                 break;
             case 5:
-                Simulation.SendInput.SimulateAction(GIActions.SwitchMember5);
+                Simulation.SimulateAction(GIActions.SwitchMember5);
                 break;
             default:
                 break;
@@ -418,7 +418,7 @@ public class Avatar
                 return;
             }
 
-            Simulation.SendInput.SimulateAction(GIActions.NormalAttack);
+            Simulation.SimulateAction(GIActions.NormalAttack);
             ms -= 200;
             Sleep(200, Ct);
         }
@@ -440,31 +440,46 @@ public class Avatar
             {
                 if (Name == "纳西妲")
                 {
-                    Simulation.SendInput.SimulateAction(GIActions.ElementalSkill, KeyType.KeyDown);
+                    Simulation.SimulateAction(GIActions.ElementalSkill, KeyType.KeyDown);
                     Sleep(300, Ct);
                     for (int j = 0; j < 10; j++)
                     {
-                        Simulation.SendInput.Mouse.MoveMouseBy(1000, 0);
-                        Sleep(50); // 持续操作不应该被cts取消
+                        // 在手柄模式下使用右摇杆，键鼠模式下使用鼠标
+                        if (Simulation.CurrentInputMode == InputMode.XInput)
+                        {
+                            Simulation.SetRightStick(short.MaxValue, 0);
+                            Sleep(50);
+                        }
+                        else
+                        {
+                            Simulation.SendInput.Mouse.MoveMouseBy(1000, 0);
+                            Sleep(50); // 持续操作不应该被cts取消
+                        }
                     }
 
                     Sleep(300); // 持续操作不应该被cts取消
-                    Simulation.SendInput.SimulateAction(GIActions.ElementalSkill, KeyType.KeyUp);
+                    Simulation.SimulateAction(GIActions.ElementalSkill, KeyType.KeyUp);
+                    
+                    // 重置摇杆
+                    if (Simulation.CurrentInputMode == InputMode.XInput)
+                    {
+                        Simulation.SetRightStick(0, 0);
+                    }
                 }
                 else if (Name == "坎蒂丝")
                 {
-                    Simulation.SendInput.SimulateAction(GIActions.ElementalSkill, KeyType.KeyDown);
+                    Simulation.SimulateAction(GIActions.ElementalSkill, KeyType.KeyDown);
                     Thread.Sleep(3000);
-                    Simulation.SendInput.SimulateAction(GIActions.ElementalSkill, KeyType.KeyUp);
+                    Simulation.SimulateAction(GIActions.ElementalSkill, KeyType.KeyUp);
                 }
                 else
                 {
-                    Simulation.SendInput.SimulateAction(GIActions.ElementalSkill, KeyType.Hold);
+                    Simulation.SimulateAction(GIActions.ElementalSkill, KeyType.Hold);
                 }
             }
             else
             {
-                Simulation.SendInput.SimulateAction(GIActions.ElementalSkill);
+                Simulation.SimulateAction(GIActions.ElementalSkill);
             }
 
             Sleep(200, Ct);
@@ -531,7 +546,7 @@ public class Avatar
                 return;
             }
 
-            Simulation.SendInput.SimulateAction(GIActions.ElementalBurst);
+            Simulation.SimulateAction(GIActions.ElementalBurst);
             Sleep(200, Ct);
 
             using var region = CaptureToRectArea();
@@ -573,9 +588,9 @@ public class Avatar
             ms = 200;
         }
 
-        Simulation.SendInput.SimulateAction(GIActions.SprintMouse, KeyType.KeyDown);
+        Simulation.SimulateAction(GIActions.SprintMouse, KeyType.KeyDown);
         Sleep(ms); // 冲刺不能被cts取消
-        Simulation.SendInput.SimulateAction(GIActions.SprintMouse, KeyType.KeyUp);
+        Simulation.SimulateAction(GIActions.SprintMouse, KeyType.KeyUp);
     }
 
     public void Walk(string key, int ms)
@@ -608,9 +623,29 @@ public class Avatar
             return;
         }
 
-        Simulation.SendInput.Keyboard.KeyDown(vk);
-        Sleep(ms); // 行走不能被cts取消
-        Simulation.SendInput.Keyboard.KeyUp(vk);
+        // 在手柄模式下，使用摇杆模拟移动
+        if (Simulation.CurrentInputMode == InputMode.XInput)
+        {
+            // 将方向转换为摇杆坐标
+            short x = 0, y = 0;
+            const short maxValue = short.MaxValue;
+            
+            if (key == "w") y = maxValue;
+            else if (key == "s") y = (short)-maxValue;
+            else if (key == "a") x = (short)-maxValue;
+            else if (key == "d") x = maxValue;
+            
+            Simulation.SetLeftStick(x, y);
+            Sleep(ms); // 行走不能被cts取消
+            Simulation.SetLeftStick(0, 0); // 释放摇杆
+        }
+        else
+        {
+            // 键鼠模式，使用原有逻辑
+            Simulation.SendInput.Keyboard.KeyDown(vk);
+            Sleep(ms); // 行走不能被cts取消
+            Simulation.SendInput.Keyboard.KeyUp(vk);
+        }
     }
 
     /// <summary>
@@ -620,7 +655,30 @@ public class Avatar
     /// <param name="pixelDeltaY"></param>
     public void MoveCamera(int pixelDeltaX, int pixelDeltaY)
     {
-        Simulation.SendInput.Mouse.MoveMouseBy(pixelDeltaX, pixelDeltaY);
+        // 在手柄模式下，使用右摇杆控制镜头
+        if (Simulation.CurrentInputMode == InputMode.XInput)
+        {
+            // 将鼠标移动量转换为摇杆坐标
+            // 使用灵敏度参数进行缩放
+            const float sensitivity = 100.0f; // 可以根据需要调整
+            
+            float scaledX = pixelDeltaX * sensitivity;
+            float scaledY = pixelDeltaY * sensitivity;
+            
+            // 限幅到摇杆范围
+            short stickX = (short)Math.Clamp(scaledX, short.MinValue, short.MaxValue);
+            short stickY = (short)Math.Clamp(scaledY, short.MinValue, short.MaxValue);
+            
+            Simulation.SetRightStick(stickX, stickY);
+            // 短暂延迟以模拟镜头移动
+            Sleep(50);
+            Simulation.SetRightStick(0, 0); // 释放摇杆
+        }
+        else
+        {
+            // 键鼠模式，使用原有逻辑
+            Simulation.SendInput.Mouse.MoveMouseBy(pixelDeltaX, pixelDeltaY);
+        }
     }
 
     /// <summary>
@@ -741,7 +799,7 @@ public class Avatar
     /// </summary>
     public void Jump()
     {
-        Simulation.SendInput.SimulateAction(GIActions.Jump);
+        Simulation.SimulateAction(GIActions.Jump);
     }
 
     /// <summary>

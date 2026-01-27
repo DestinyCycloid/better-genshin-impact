@@ -238,6 +238,28 @@ public class AutoFightTask : ISoloTask
         _ct = ct;
 
         LogScreenResolution();
+        
+        // 保存原始输入模式，以便任务结束后恢复
+        var originalInputMode = TaskContext.Instance().Config.InputMode;
+        
+        // 根据配置切换输入模式
+        try
+        {
+            var success = Simulation.SwitchInputMode(TaskContext.Instance().Config.InputMode);
+            if (!success)
+            {
+                Logger.LogWarning("切换到配置的输入模式失败，使用键鼠模式");
+            }
+            else
+            {
+                Logger.LogInformation("当前输入模式: {Mode}", Simulation.CurrentInputMode);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "切换输入模式时发生错误，使用键鼠模式");
+        }
+        
         var combatScenes = GetCombatScenesWithRetry();
         /*var combatScenes = new CombatScenes().InitializeTeam(CaptureToRectArea());
         if (!combatScenes.CheckTeamInitialized())
@@ -482,6 +504,18 @@ public class AutoFightTask : ISoloTask
         }, cts2.Token);
 
         await fightTask;
+        
+        // 任务结束后重置手柄状态
+        try
+        {
+            Simulation.ReleaseAllKey();
+            Logger.LogInformation("战斗任务结束，已重置所有输入状态");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "重置输入状态时发生错误");
+        }
+        
         if (_taskParam.BattleThresholdForLoot>=2 && countFight < _taskParam.BattleThresholdForLoot)
         {
             Logger.LogInformation($"战斗人次（{countFight}）低于配置人次（{_taskParam.BattleThresholdForLoot}），跳过此次拾取！");

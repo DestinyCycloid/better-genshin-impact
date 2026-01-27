@@ -27,6 +27,7 @@ using BetterGenshinImpact.View.Controls.Webview;
 using BetterGenshinImpact.View.Converters;
 using BetterGenshinImpact.View.Pages;
 using BetterGenshinImpact.View.Windows;
+using BetterGenshinImpact.Core.Simulator;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
@@ -57,6 +58,12 @@ public partial class CommonSettingsPageViewModel : ViewModel
         Tuple.Create(TimeSpan.FromHours(1), "欧服 UTC+01"),
         Tuple.Create(TimeSpan.FromHours(-5), "美服 UTC-05")
     ];
+
+    public ObservableCollection<KeyValuePair<InputMode, string>> InputModes { get; } = new()
+    {
+        new KeyValuePair<InputMode, string>(InputMode.KeyboardMouse, "键盘鼠标"),
+        new KeyValuePair<InputMode, string>(InputMode.XInput, "XInput 手柄")
+    };
 
     public CommonSettingsPageViewModel(IConfigService configService, INavigationService navigationService,
         NotificationService notificationService)
@@ -370,5 +377,46 @@ public partial class CommonSettingsPageViewModel : ViewModel
     {
         Config.OtherConfig.OcrConfig.PaddleOcrModelConfig = value;
         await App.ServiceProvider.GetRequiredService<OcrFactory>().Unload();
+    }
+
+    [RelayCommand]
+    private void OpenGamepadBindingsWindow()
+    {
+        var bindingsWindow = GamepadBindingsWindow.Instance;
+        bindingsWindow.Owner = Application.Current.MainWindow;
+        bindingsWindow.ShowDialog();
+    }
+
+    [RelayCommand]
+    private async Task OpenViGEmBusDownload()
+    {
+        await Launcher.LaunchUriAsync(new Uri("https://github.com/nefarius/ViGEmBus/releases/latest"));
+    }
+
+    [RelayCommand]
+    private async Task OpenViGEmBusInstallGuide()
+    {
+        var guidePath = Global.Absolute("Docs/vigembus_install_guide.md");
+        if (System.IO.File.Exists(guidePath))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = guidePath,
+                    UseShellExecute = true
+                });
+            }
+            catch
+            {
+                // 如果无法打开本地文件，打开在线文档
+                await Launcher.LaunchUriAsync(new Uri("https://github.com/nefarius/ViGEmBus/wiki/Installation"));
+            }
+        }
+        else
+        {
+            // 如果本地文件不存在，打开在线文档
+            await Launcher.LaunchUriAsync(new Uri("https://github.com/nefarius/ViGEmBus/wiki/Installation"));
+        }
     }
 }

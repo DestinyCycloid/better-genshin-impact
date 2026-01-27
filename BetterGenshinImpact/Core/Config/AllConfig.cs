@@ -24,6 +24,8 @@ using BetterGenshinImpact.GameTask.GetGridIcons;
 using BetterGenshinImpact.GameTask.AutoEat;
 using BetterGenshinImpact.GameTask.MapMask;
 using BetterGenshinImpact.GameTask.UseRedeemCode;
+using BetterGenshinImpact.Core.Simulator;
+using Microsoft.Extensions.Logging;
 
 namespace BetterGenshinImpact.Core.Config;
 
@@ -70,6 +72,12 @@ public partial class AllConfig : ObservableObject
     /// </summary>
     [ObservableProperty]
     private bool _autoFixWin11BitBlt = true;
+
+    /// <summary>
+    /// 输入模式（键鼠或手柄）
+    /// </summary>
+    [ObservableProperty]
+    private InputMode _inputMode = InputMode.XInput;
 
     // /// <summary>
     // /// 推理使用的设备
@@ -221,6 +229,11 @@ public partial class AllConfig : ObservableObject
     public KeyBindingsConfig KeyBindingsConfig { get; set; } = new();
 
     /// <summary>
+    /// 手柄按键绑定配置
+    /// </summary>
+    public GamepadBindingsConfig GamepadBindingsConfig { get; set; } = new();
+
+    /// <summary>
     /// 其他配置
     /// </summary>
     public OtherConfig OtherConfig { get; set; } = new();
@@ -247,12 +260,14 @@ public partial class AllConfig : ObservableObject
     public void InitEvent()
     {
         PropertyChanged += OnAnyPropertyChanged;
+        PropertyChanged += OnInputModeChanged;
         MaskWindowConfig.PropertyChanged += OnAnyPropertyChanged;
         CommonConfig.PropertyChanged += OnAnyPropertyChanged;
         GenshinStartConfig.PropertyChanged += OnAnyPropertyChanged;
         NotificationConfig.PropertyChanged += OnAnyPropertyChanged;
         NotificationConfig.PropertyChanged += OnNotificationPropertyChanged;
         KeyBindingsConfig.PropertyChanged += OnAnyPropertyChanged;
+        GamepadBindingsConfig.PropertyChanged += OnAnyPropertyChanged;
         AutoPickConfig.PropertyChanged += OnAnyPropertyChanged;
         AutoSkipConfig.PropertyChanged += OnAnyPropertyChanged;
         AutoFishingConfig.PropertyChanged += OnAnyPropertyChanged;
@@ -285,5 +300,32 @@ public partial class AllConfig : ObservableObject
     public void OnNotificationPropertyChanged(object? sender, PropertyChangedEventArgs args)
     {
         NotificationService.Instance().RefreshNotifiers();
+    }
+
+    /// <summary>
+    /// 处理输入模式变更事件
+    /// </summary>
+    private void OnInputModeChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(InputMode))
+        {
+            try
+            {
+                var router = InputRouter.Instance;
+                var success = router.SwitchMode(InputMode);
+                
+                if (!success)
+                {
+                    // 如果切换失败，更新配置为实际的模式
+                    InputMode = router.CurrentMode;
+                }
+            }
+            catch (Exception ex)
+            {
+                App.GetLogger<AllConfig>().LogError(ex, "切换输入模式时发生错误");
+                // 发生错误时回退到键鼠模式
+                InputMode = InputMode.KeyboardMouse;
+            }
+        }
     }
 }
