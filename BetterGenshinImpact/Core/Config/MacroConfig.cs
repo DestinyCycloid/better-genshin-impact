@@ -54,13 +54,13 @@ public partial class MacroConfig : ObservableObject
     ///     一键战斗宏启用状态
     /// </summary>
     [ObservableProperty]
-    private bool _combatMacroEnabled;
+    private bool _combatMacroEnabled = true;
 
     /// <summary>
     ///     一键战斗宏快捷键模式
     /// </summary>
     [ObservableProperty]
-    private string _combatMacroHotkeyMode = OneKeyFightTask.HoldOnMode;
+    private string _combatMacroHotkeyMode = OneKeyFightTask.TickMode;
 
     /// <summary>
     ///     一键战斗宏优先级

@@ -4,6 +4,7 @@ using BetterGenshinImpact.GameTask.AutoFight.Script;
 using BetterGenshinImpact.Model;
 using BetterGenshinImpact.Service;
 using Microsoft.Extensions.Logging;
+using OpenCvSharp;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -62,19 +63,27 @@ public class OneKeyFightTask : Singleton<OneKeyFightTask>
         }
         else if (IsTickMode())
         {
-            if (_cts == null || _cts.Token.IsCancellationRequested)
+            // 触发模式：每次按键都启动新任务（如果有旧任务在运行则先取消）
+            if (_fightTask != null && !_fightTask.IsCompleted)
             {
-                _cts = new CancellationTokenSource();
-                _fightTask = FightTask(_cts.Token);
-                if (!_fightTask.IsCompleted)
+                // 有任务正在运行，先取消它
+                Logger.LogInformation("取消正在运行的宏任务");
+                _cts?.Cancel();
+                // 等待任务完成
+                try
                 {
-                    _fightTask.Start();
+                    _fightTask.Wait(100); // 最多等待100ms
                 }
+                catch { }
             }
-            else
-            {
-                _cts.Cancel();
-            }
+            
+            // 启动新任务
+            Logger.LogInformation("启动新的宏任务");
+            _cts = new CancellationTokenSource();
+            _fightTask = Task.Run(() => ExecuteMacro(_cts.Token));
+            
+            // 触发模式下立即重置 _isKeyDown，允许下次按键
+            _isKeyDown = false;
         }
     }
 
@@ -128,74 +137,52 @@ public class OneKeyFightTask : Singleton<OneKeyFightTask>
     /// </summary>
     private Task FightTask(CancellationToken ct)
     {
-        var imageRegion = CaptureToRectArea();
-        var combatScenes = new CombatScenes().InitializeTeam(imageRegion);
-        if (!combatScenes.CheckTeamInitialized())
+        // 强制使用"玛薇卡"的宏（测试模式）
+        Logger.LogWarning("⚠️ 测试模式：强制使用玛薇卡的宏");
+        
+        ExecuteMacro(ct);
+        
+        return Task.CompletedTask;
+    }
+    
+    /// <summary>
+    /// 执行宏命令
+    /// </summary>
+    private void ExecuteMacro(CancellationToken ct)
+    {
+        if (_avatarMacros != null && _avatarMacros.Count > 0)
         {
-            if (_currentCombatScenes == null)
+            string targetAvatar = "玛薇卡";
+            if (!_avatarMacros.ContainsKey(targetAvatar))
             {
-                Logger.LogError("首次队伍角色识别失败");
-                return Task.CompletedTask;
+                Logger.LogError("未找到角色 {Avatar} 的宏配置", targetAvatar);
+                return;
             }
-            else
+            
+            Logger.LogInformation("使用角色宏: {Avatar}", targetAvatar);
+            
+            var commands = _avatarMacros[targetAvatar];
+            if (commands != null && commands.Count > 0)
             {
-                Logger.LogWarning("队伍角色识别失败，使用上次识别结果，队伍未切换时无影响");
-            }
-        }
-        else
-        {
-            _currentCombatScenes = combatScenes;
-        }
-
-        // 找到出战角色
-        // var activeAvatar = _currentCombatScenes.GetAvatars().First(avatar => avatar.IsActive(imageRegion));
-        var avatarName = _currentCombatScenes.CurrentAvatar(true, imageRegion, ct);
-        if (avatarName is null)
-        {
-            Logger.LogError("无法识别出战角色");
-            return Task.CompletedTask;
-        }
-
-        var activeAvatar = _currentCombatScenes.SelectAvatar(avatarName);
-        if (activeAvatar is null)
-        {
-            Logger.LogError("获取出战角色{Name}失败", avatarName);
-            return Task.CompletedTask;
-        }
-
-        if (_avatarMacros != null && _avatarMacros.TryGetValue(activeAvatar.Name, out var combatCommands))
-        {
-            return new Task(() =>
-            {
-                var round = 1;
-                while (!ct.IsCancellationRequested && IsEnabled())
+                // 创建一个临时的 CombatScenes 和 Avatar 对象来执行宏命令
+                var tempCombatScenes = new CombatScenes();
+                var tempAvatar = new Avatar(tempCombatScenes, targetAvatar, 1, new Rect(0, 0, 100, 100));
+                foreach (var command in commands)
                 {
-                    Logger.LogInformation("→ {Name}执行宏 (第{Round}轮)", activeAvatar.Name, round);
-                    if (IsHoldOnMode() && !_isKeyDown)
+                    if (ct.IsCancellationRequested)
                     {
                         break;
                     }
-
-                    // 通用化战斗策略
-                    foreach (var command in combatCommands)
+                    try
                     {
-                        if (command.ActivatingRound != null && command.ActivatingRound.Count > 0 && !command.ActivatingRound.Contains(round))
-                        {
-                            // 跳过强制首轮指令
-                            continue;
-                        }
-                        command.Execute(activeAvatar);
+                        command.Execute(tempAvatar);
                     }
-                    round++;
+                    catch (Exception ex)
+                    {
+                        Logger.LogError(ex, "执行宏命令失败: {Command}", command);
+                    }
                 }
-
-                Logger.LogInformation("→ {Name}停止宏", activeAvatar.Name);
-            });
-        }
-        else
-        {
-            Logger.LogWarning("→ {Name}配置[{Priority}]为空，请先配置一键宏", activeAvatar.Name, _activeMacroPriority);
-            return Task.CompletedTask;
+            }
         }
     }
 

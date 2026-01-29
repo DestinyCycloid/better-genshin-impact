@@ -87,6 +87,30 @@ public class Simulation
     {
         Router.GetOutput().SetRightTrigger(value);
     }
+    
+    /// <summary>
+    /// 按下手柄按钮（仅在 XInput 模式下有效）
+    /// </summary>
+    /// <param name="button">手柄按钮</param>
+    public static void SetGamepadButtonDown(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button button)
+    {
+        if (Router.GetOutput() is XInputOutput xinput)
+        {
+            xinput.SetButtonDown(button);
+        }
+    }
+    
+    /// <summary>
+    /// 松开手柄按钮（仅在 XInput 模式下有效）
+    /// </summary>
+    /// <param name="button">手柄按钮</param>
+    public static void SetGamepadButtonUp(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button button)
+    {
+        if (Router.GetOutput() is XInputOutput xinput)
+        {
+            xinput.SetButtonUp(button);
+        }
+    }
 
     /// <summary>
     /// 释放所有按键/按钮（通过输入路由器）

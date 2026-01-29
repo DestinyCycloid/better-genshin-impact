@@ -114,6 +114,13 @@ public partial class HotKeyConfig : ObservableObject
     [ObservableProperty]
     private string _turnAroundHotkeyType = HotKeyTypeEnum.KeyboardMonitor.ToString();
 
+    // 转圈圈切换模式（按一下开启，再按一下关闭）
+    [ObservableProperty]
+    private string _turnAroundToggleHotkey = "";
+
+    [ObservableProperty]
+    private string _turnAroundToggleHotkeyType = HotKeyTypeEnum.KeyboardMonitor.ToString();
+
     // 点击确认按钮
     [ObservableProperty]
     private string _clickGenshinConfirmButtonHotkey = "";

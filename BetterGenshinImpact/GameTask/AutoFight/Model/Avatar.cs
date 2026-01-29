@@ -899,34 +899,74 @@ public class Avatar
     public void MouseDown(string key = "left")
     {
         key = key.ToLower();
-        if (key == "left")
+        
+        // 根据当前输入模式选择不同的实现
+        if (Simulation.CurrentInputMode == InputMode.XInput)
         {
-            Simulation.SendInput.Mouse.LeftButtonDown();
+            // 手柄模式：映射到手柄按键
+            if (key == "left")
+            {
+                // 左键 -> X 键（普通攻击）
+                Simulation.SetGamepadButtonDown(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.X);
+            }
+            else if (key == "right")
+            {
+                // 右键 -> B 键（瞄准/特殊机制）
+                Simulation.SetGamepadButtonDown(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.B);
+            }
         }
-        else if (key == "right")
+        else
         {
-            Simulation.SendInput.Mouse.RightButtonDown();
-        }
-        else if (key == "middle")
-        {
-            Simulation.SendInput.Mouse.MiddleButtonDown();
+            // 键鼠模式：使用鼠标
+            if (key == "left")
+            {
+                Simulation.SendInput.Mouse.LeftButtonDown();
+            }
+            else if (key == "right")
+            {
+                Simulation.SendInput.Mouse.RightButtonDown();
+            }
+            else if (key == "middle")
+            {
+                Simulation.SendInput.Mouse.MiddleButtonDown();
+            }
         }
     }
 
     public void MouseUp(string key = "left")
     {
         key = key.ToLower();
-        if (key == "left")
+        
+        // 根据当前输入模式选择不同的实现
+        if (Simulation.CurrentInputMode == InputMode.XInput)
         {
-            Simulation.SendInput.Mouse.LeftButtonUp();
+            // 手柄模式：映射到手柄按键
+            if (key == "left")
+            {
+                // 左键 -> X 键（普通攻击）
+                Simulation.SetGamepadButtonUp(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.X);
+            }
+            else if (key == "right")
+            {
+                // 右键 -> B 键（瞄准/特殊机制）
+                Simulation.SetGamepadButtonUp(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.B);
+            }
         }
-        else if (key == "right")
+        else
         {
-            Simulation.SendInput.Mouse.RightButtonUp();
-        }
-        else if (key == "middle")
-        {
-            Simulation.SendInput.Mouse.MiddleButtonUp();
+            // 键鼠模式：使用鼠标
+            if (key == "left")
+            {
+                Simulation.SendInput.Mouse.LeftButtonUp();
+            }
+            else if (key == "right")
+            {
+                Simulation.SendInput.Mouse.RightButtonUp();
+            }
+            else if (key == "middle")
+            {
+                Simulation.SendInput.Mouse.MiddleButtonUp();
+            }
         }
     }
 

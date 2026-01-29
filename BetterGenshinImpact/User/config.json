@@ -1,0 +1,10 @@
+{
+  "hotKeyConfig": {
+    "oneKeyFightHotkey": "F9",
+    "turnAroundToggleHotkey": "F10"
+  },
+  "macroConfig": {
+    "combatMacroEnabled": true,
+    "combatMacroHotkeyMode": "触发"
+  }
+}

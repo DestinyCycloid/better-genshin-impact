@@ -334,8 +334,22 @@ public partial class HotKeyPageViewModel : ObservableObject, IViewModel
             Config.HotKeyConfig.TurnAroundHotkeyType,
             (_, _) => { TurnAroundMacro.Done(); },
             true
-        );
+        )
+        {
+            OnKeyUpAction = (_, _) => { TurnAroundMacro.Stop(); }
+        };
         macroDirectory.Children.Add(turnAroundHotKeySettingModel);
+        
+        // 添加切换模式的转圈圈热键（按一下开启，再按一下关闭）
+        var turnAroundToggleHotKeySettingModel = new HotKeySettingModel(
+            "切换旋转视角 - 那维莱特转圈（开关模式）",
+            nameof(Config.HotKeyConfig.TurnAroundToggleHotkey),
+            Config.HotKeyConfig.TurnAroundToggleHotkey,
+            Config.HotKeyConfig.TurnAroundToggleHotkeyType,
+            (_, _) => { TurnAroundMacro.Toggle(); },
+            false  // 不是长按模式
+        );
+        macroDirectory.Children.Add(turnAroundToggleHotKeySettingModel);
 
         var enhanceArtifactHotKeySettingModel = new HotKeySettingModel(
             "按下快速强化圣遗物",

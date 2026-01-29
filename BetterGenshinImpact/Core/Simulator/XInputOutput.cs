@@ -367,6 +367,54 @@ public class XInputOutput : IInputOutput
     }
     
     /// <summary>
+    /// 按下指定的手柄按钮
+    /// </summary>
+    public void SetButtonDown(Xbox360Button button)
+    {
+        if (!EnsureConnected())
+        {
+            return;
+        }
+        
+        try
+        {
+            _logger.LogTrace("按下按钮: {Button}", button);
+            
+            _controller!.SetButtonState(button, true);
+            _controller.SubmitReport();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "按下按钮失败: {Button}", button);
+            EnsureConnected(); // 尝试恢复连接
+        }
+    }
+    
+    /// <summary>
+    /// 松开指定的手柄按钮
+    /// </summary>
+    public void SetButtonUp(Xbox360Button button)
+    {
+        if (!EnsureConnected())
+        {
+            return;
+        }
+        
+        try
+        {
+            _logger.LogTrace("松开按钮: {Button}", button);
+            
+            _controller!.SetButtonState(button, false);
+            _controller.SubmitReport();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "松开按钮失败: {Button}", button);
+            EnsureConnected(); // 尝试恢复连接
+        }
+    }
+    
+    /// <summary>
     /// 释放所有按键/按钮，重置手柄状态
     /// </summary>
     public void ReleaseAll()
