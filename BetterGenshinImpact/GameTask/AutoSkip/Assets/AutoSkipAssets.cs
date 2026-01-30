@@ -10,11 +10,14 @@ public class AutoSkipAssets : BaseAssets<AutoSkipAssets>
 
     // public RecognitionObject ChatReviewButtonRo;
     public RecognitionObject DisabledUiButtonRo;
+    public RecognitionObject DisabledUiButtonGamepadRo; // 手柄模式下的左下角识别
 
     public RecognitionObject PlayingTextRo;
 
     public Rect OptionRoi;
     public RecognitionObject OptionIconRo;
+    public Rect OptionGamepadRoi; // 手柄模式的对话选项区域
+    public RecognitionObject OptionIconGamepadRo; // 手柄模式的对话选项图标
     public RecognitionObject DailyRewardIconRo;
     public RecognitionObject ExploreIconRo;
     public RecognitionObject ExclamationIconRo;
@@ -65,6 +68,19 @@ public class AutoSkipAssets : BaseAssets<AutoSkipAssets>
             RegionOfInterest = new Rect(0, 0, CaptureRect.Width / 3, CaptureRect.Height / 8),
             DrawOnWindow = true
         }.InitTemplate();
+        
+        // 手柄模式下的左下角LS图标识别（精确缩小识别区域）
+        // LS图标是左下角第4个图标，模板图片已缩小到31x20
+        DisabledUiButtonGamepadRo = new RecognitionObject
+        {
+            Name = "DisabledUiButtonGamepad",
+            RecognitionType = RecognitionTypes.TemplateMatch,
+            TemplateImageMat = GameTaskManager.LoadAssetImage("AutoSkip", "disabled_ui_gamepad.png"),
+            RegionOfInterest = new Rect((int)(315 * AssetScale), CaptureRect.Height - (int)(90 * AssetScale), (int)(40 * AssetScale), (int)(30 * AssetScale)),  // 缩小识别区域：40x30
+            DrawOnWindow = true,
+            Threshold = 0.5,
+            Use3Channels = true  // 彩色识别
+        }.InitTemplate();
 
         PlayingTextRo = new RecognitionObject
         {
@@ -84,6 +100,20 @@ public class AutoSkipAssets : BaseAssets<AutoSkipAssets>
             RegionOfInterest = OptionRoi,
             DrawOnWindow = false
         }.InitTemplate();
+        
+        // 手柄模式的对话选项区域：右侧偏中，下半部分（对话选项在右侧下半部分）
+        OptionGamepadRoi = new Rect(CaptureRect.Width / 2 + CaptureRect.Width / 8, CaptureRect.Height / 2, CaptureRect.Width / 3, CaptureRect.Height / 2);
+        OptionIconGamepadRo = new RecognitionObject
+        {
+            Name = "OptionIconGamepad",
+            RecognitionType = RecognitionTypes.TemplateMatch,
+            TemplateImageMat = GameTaskManager.LoadAssetImage("AutoSkip", "icon_option_gamepad.png"),  // 使用手柄模式专用图标
+            RegionOfInterest = OptionGamepadRoi,
+            DrawOnWindow = false,
+            Threshold = 0.7,
+            Use3Channels = true
+        }.InitTemplate();
+        
         DailyRewardIconRo = new RecognitionObject
         {
             Name = "DailyRewardIcon",

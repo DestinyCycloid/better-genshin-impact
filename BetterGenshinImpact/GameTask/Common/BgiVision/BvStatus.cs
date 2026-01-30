@@ -1,5 +1,7 @@
 using BetterGenshinImpact.Core.Recognition;
+using BetterGenshinImpact.Core.Simulator;
 using BetterGenshinImpact.GameTask.AutoFight.Assets;
+using BetterGenshinImpact.GameTask.AutoSkip;
 using BetterGenshinImpact.GameTask.AutoSkip.Assets;
 using BetterGenshinImpact.GameTask.Common.Element.Assets;
 using BetterGenshinImpact.GameTask.GameLoading.Assets;
@@ -7,6 +9,7 @@ using BetterGenshinImpact.GameTask.Model.Area;
 using BetterGenshinImpact.GameTask.QuickTeleport.Assets;
 using BetterGenshinImpact.Helpers;
 using Microsoft.Extensions.Localization;
+using Microsoft.Extensions.Logging;
 using OpenCvSharp;
 using System;
 using System.Globalization;
@@ -330,8 +333,30 @@ public static partial class Bv
     /// <returns></returns>
     public static bool IsInTalkUi(ImageRegion captureRa)
     {
-        using var ra = captureRa.Find(AutoSkipAssets.Instance.DisabledUiButtonRo);
-        return ra.IsExist();
+        var logger = App.GetLogger<AutoSkipTrigger>();
+        
+        // 根据输入模式选择识别位置
+        if (Simulation.CurrentInputMode == InputMode.XInput)
+        {
+            // 手柄模式：只识别左下角
+            using var raGamepad = captureRa.Find(AutoSkipAssets.Instance.DisabledUiButtonGamepadRo);
+            if (raGamepad.IsExist())
+            {
+                logger.LogDebug("✅ 识别到对话界面（手柄模式）");
+                return true;
+            }
+        }
+        else
+        {
+            // 键盘模式：只识别左上角
+            using var ra = captureRa.Find(AutoSkipAssets.Instance.DisabledUiButtonRo);
+            if (ra.IsExist())
+            {
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     /// <summary>

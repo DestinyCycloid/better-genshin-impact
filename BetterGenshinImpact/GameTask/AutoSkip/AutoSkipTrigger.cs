@@ -1,4 +1,4 @@
-﻿using BetterGenshinImpact.Core.Config;
+using BetterGenshinImpact.Core.Config;
 using BetterGenshinImpact.Core.Recognition;
 using BetterGenshinImpact.Core.Recognition.OCR;
 using BetterGenshinImpact.Core.Recognition.OpenCv;
@@ -41,6 +41,7 @@ public partial class AutoSkipTrigger : ITaskTrigger
     public int Priority => 20;
     public bool IsExclusive => false;
     
+    // 改回 Talk，让触发器在对话界面时运行
     public GameUiCategory SupportedGameUiCategory => GameUiCategory.Talk;
 
 
@@ -72,6 +73,18 @@ public partial class AutoSkipTrigger : ITaskTrigger
     private PostMessageSimulator? _postMessageSimulator;
     
     private readonly bool _isCustomConfiguration;
+
+    /// <summary>
+    /// 辅助方法：模拟手柄按键按下并松开
+    /// </summary>
+    /// <param name="button">手柄按钮</param>
+    /// <param name="delayMs">按下后延迟的毫秒数（默认50ms）</param>
+    private void GamepadButtonPress(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button button, int delayMs = 50)
+    {
+        Simulation.SetGamepadButtonDown(button);
+        Thread.Sleep(delayMs);
+        Simulation.SetGamepadButtonUp(button);
+    }
 
     public AutoSkipTrigger()
     {
@@ -176,6 +189,22 @@ public partial class AutoSkipTrigger : ITaskTrigger
 
         var isPlaying = content.CurrentGameUiCategory == GameUiCategory.Talk
                         || Bv.IsInTalkUi(content.CaptureRectArea); // 播放中
+        
+        // 如果没有识别到对话界面，尝试识别对话选项气泡
+        if (!isPlaying)
+        {
+            // 根据输入模式选择不同的识别对象
+            var optionIconRo = Simulation.CurrentInputMode == InputMode.XInput 
+                ? _autoSkipAssets.OptionIconGamepadRo 
+                : _autoSkipAssets.OptionIconRo;
+            
+            using var optionIconRa = content.CaptureRectArea.Find(optionIconRo);
+            if (optionIconRa.IsExist())
+            {
+                isPlaying = true;
+                _logger.LogInformation("✅ 识别到对话选项（手柄模式）");
+            }
+        }
 
         if (!isPlaying && (DateTime.Now - _prevPlayingTime).TotalSeconds <= 5)
         {
@@ -206,7 +235,20 @@ public partial class AutoSkipTrigger : ITaskTrigger
         if (isPlaying)
         {
             _prevPlayingTime = DateTime.Now;
-            if (TaskContext.Instance().Config.AutoSkipConfig.QuicklySkipConversationsEnabled)
+            
+            // 先检查对话选项，如果有对话选项就不要按A键跳过对话
+            bool hasOption;
+            if (UseBackgroundOperation || IsUseInteractionKey)
+            {
+                hasOption = ChatOptionChooseUseKey(content.CaptureRectArea);
+            }
+            else
+            {
+                hasOption = ChatOptionChoose(content.CaptureRectArea);
+            }
+            
+            // 只有在没有对话选项时才按A键跳过对话
+            if (!hasOption && TaskContext.Instance().Config.AutoSkipConfig.QuicklySkipConversationsEnabled)
             {
                 if (_config.BeforeClickConfirmDelay > 0)
                 {
@@ -219,19 +261,16 @@ public partial class AutoSkipTrigger : ITaskTrigger
                 }
                 else
                 {
-                    _postMessageSimulator?.KeyPressBackground(User32.VK.VK_SPACE);
+                    // 根据当前输入模式选择按键：键盘模式按空格，手柄模式按A键
+                    if (Simulation.CurrentInputMode == InputMode.XInput)
+                    {
+                        GamepadButtonPress(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.A);
+                    }
+                    else
+                    {
+                        _postMessageSimulator?.KeyPressBackground(User32.VK.VK_SPACE);
+                    }
                 }
-            }
-
-            // 对话选项选择
-            bool hasOption;
-            if (UseBackgroundOperation || IsUseInteractionKey)
-            {
-                hasOption = ChatOptionChooseUseKey(content.CaptureRectArea);
-            }
-            else
-            {
-                hasOption = ChatOptionChoose(content.CaptureRectArea);
             }
 
 
@@ -416,8 +455,15 @@ public partial class AutoSkipTrigger : ITaskTrigger
         content.CaptureRectArea.Find(_autoSkipAssets.PrimogemRo, primogemRa =>
         {
             Thread.Sleep(100);
-            GameCaptureRegion.GameRegion1080PPosMove(960, 900);
-            TaskContext.Instance().PostMessageSimulator.LeftButtonClickBackground();
+            // 根据当前输入模式选择按键：键盘模式按ESC，手柄模式按B键
+            if (Simulation.CurrentInputMode == InputMode.XInput)
+            {
+                GamepadButtonPress(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.B);
+            }
+            else
+            {
+                Simulation.SendInput.Keyboard.KeyPress(User32.VK.VK_ESCAPE);
+            }
             _prevGetDailyRewardsTime = DateTime.MinValue;
             primogemRa.Dispose();
         });
@@ -438,7 +484,12 @@ public partial class AutoSkipTrigger : ITaskTrigger
             return false;
         }
         
-        using var chatOptionResult = region.Find(_autoSkipAssets.OptionIconRo);
+        // 根据输入模式选择不同的识别对象
+        var optionIconRo = Simulation.CurrentInputMode == InputMode.XInput 
+            ? _autoSkipAssets.OptionIconGamepadRo 
+            : _autoSkipAssets.OptionIconRo;
+        
+        using var chatOptionResult = region.Find(optionIconRo);
         var isInChat = false;
         isInChat = chatOptionResult.IsExist();
         if (!isInChat)
@@ -452,27 +503,59 @@ public partial class AutoSkipTrigger : ITaskTrigger
             var fKey = AutoPickAssets.Instance.PickVk;
             if (_config.IsClickFirstChatOption())
             {
-                _postMessageSimulator?.KeyPressBackground(fKey);
+                // 根据当前输入模式选择按键
+                if (Simulation.CurrentInputMode == InputMode.XInput)
+                {
+                    GamepadButtonPress(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.A);
+                }
+                else
+                {
+                    _postMessageSimulator?.KeyPressBackground(fKey);
+                }
             }
             else if (_config.IsClickRandomChatOption())
             {
                 var random = new Random();
                 // 随机 0~4 的数字
                 var r = random.Next(0, 5);
-                for (var j = 0; j < r; j++)
+                
+                if (Simulation.CurrentInputMode == InputMode.XInput)
                 {
-                    _postMessageSimulator?.KeyPressBackground(User32.VK.VK_S);
-                    Thread.Sleep(100);
+                    // 手柄模式：使用方向键下
+                    for (var j = 0; j < r; j++)
+                    {
+                        GamepadButtonPress(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.Down, 100);
+                    }
+                    Thread.Sleep(50);
+                    GamepadButtonPress(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.A);
                 }
-
-                Thread.Sleep(50);
-                _postMessageSimulator?.KeyPressBackground(fKey);
+                else
+                {
+                    // 键盘模式：使用S键
+                    for (var j = 0; j < r; j++)
+                    {
+                        _postMessageSimulator?.KeyPressBackground(User32.VK.VK_S);
+                        Thread.Sleep(100);
+                    }
+                    Thread.Sleep(50);
+                    _postMessageSimulator?.KeyPressBackground(fKey);
+                }
             }
             else
             {
-                _postMessageSimulator?.KeyPressBackground(User32.VK.VK_W);
-                Thread.Sleep(100);
-                _postMessageSimulator?.KeyPressBackground(fKey);
+                if (Simulation.CurrentInputMode == InputMode.XInput)
+                {
+                    // 手柄模式：使用方向键上
+                    GamepadButtonPress(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.Up, 100);
+                    GamepadButtonPress(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.A);
+                }
+                else
+                {
+                    // 键盘模式：使用W键
+                    _postMessageSimulator?.KeyPressBackground(User32.VK.VK_W);
+                    Thread.Sleep(100);
+                    _postMessageSimulator?.KeyPressBackground(fKey);
+                }
             }
             
             AutoSkipLog("交互键点击(后台)");
@@ -491,6 +574,7 @@ public partial class AutoSkipTrigger : ITaskTrigger
     private bool ChatOptionChoose(ImageRegion region)
     {
         var assetScale = TaskContext.Instance().SystemInfo.AssetScale;
+        
         if (!_config.IsClickNoneChatOption())
         {
             // 感叹号识别 遇到直接点击
@@ -504,8 +588,13 @@ public partial class AutoSkipTrigger : ITaskTrigger
             }
         }
 
-        // 气泡识别
-        var chatOptionResultList = region.FindMulti(_autoSkipAssets.OptionIconRo);
+        // 气泡识别 - 根据输入模式选择不同的识别对象
+        var optionIconRoForMulti = Simulation.CurrentInputMode == InputMode.XInput 
+            ? _autoSkipAssets.OptionIconGamepadRo 
+            : _autoSkipAssets.OptionIconRo;
+        
+        var chatOptionResultList = region.FindMulti(optionIconRoForMulti);
+        
         if (chatOptionResultList.Count > 0)
         {
             // 第一个元素就是最下面的
@@ -513,8 +602,16 @@ public partial class AutoSkipTrigger : ITaskTrigger
 
             // 通过最下面的气泡框来文字识别
             var lowest = chatOptionResultList[0];
-            var ocrRect = new Rect((int)(lowest.X + lowest.Width + 8 * assetScale), region.Height / 12,
-                (int)(535 * assetScale), (int)(lowest.Y + lowest.Height + 30 * assetScale - region.Height / 12d));
+            var highest = chatOptionResultList[^1];
+            
+            // OCR区域：从最上面的气泡到最下面的气泡，再往下延伸一些
+            var ocrRect = new Rect(
+                (int)(lowest.X + lowest.Width + 8 * assetScale), 
+                (int)(highest.Y - 10 * assetScale),  // 从最上面气泡开始，稍微往上一点
+                (int)(535 * assetScale), 
+                (int)(lowest.Y + lowest.Height + 100 * assetScale - (highest.Y - 10 * assetScale))  // 到最下面气泡结束，再往下延伸100像素
+            );
+            
             var ocrResList = region.FindMulti(new RecognitionObject
             {
                 RecognitionType = RecognitionTypes.Ocr,
@@ -528,6 +625,7 @@ public partial class AutoSkipTrigger : ITaskTrigger
             var rs = new List<Region>();
             // 按照y坐标排序
             ocrResList = [.. ocrResList.OrderBy(r => r.Y)];
+            
             for (var i = 0; i < ocrResList.Count; i++)
             {
                 var item = ocrResList[i];
@@ -565,7 +663,7 @@ public partial class AutoSkipTrigger : ITaskTrigger
                         {
                             if (item.Text.Contains(customOption))  
                             {
-                                ClickOcrRegion(item);
+                                ClickChatOption(rs, item);
                                 return true;  
                             }  
                         }  
@@ -585,7 +683,7 @@ public partial class AutoSkipTrigger : ITaskTrigger
                         // 选择关键词
                         if (_selectList.Any(s => item.Text.Contains(s)))
                         {
-                            ClickOcrRegion(item);
+                            ClickChatOption(rs, item);
                             return true;
                         }
 
@@ -604,7 +702,7 @@ public partial class AutoSkipTrigger : ITaskTrigger
                         {
                             if (_config.AutoGetDailyRewardsEnabled && (item.Text.Contains("每日") || item.Text.Contains("委托")))
                             {
-                                ClickOcrRegion(item, "每日委托");
+                                ClickChatOption(rs, item, "每日委托");
                                 TaskControl.Sleep(800);
                                 
                                 // 6.2 每日提示确认
@@ -619,7 +717,7 @@ public partial class AutoSkipTrigger : ITaskTrigger
                             }
                             else if (_config.AutoReExploreEnabled && (item.Text.Contains("探索") || item.Text.Contains("派遣")))
                             {
-                                ClickOcrRegion(item, "探索派遣");
+                                ClickChatOption(rs, item, "探索派遣");
                                 Thread.Sleep(800); // 等待探索派遣界面打开
                                 new OneKeyExpeditionTask().Run(_autoSkipAssets);
                             }
@@ -628,7 +726,7 @@ public partial class AutoSkipTrigger : ITaskTrigger
                                 && !item.Text.Contains("探索")
                                 && !item.Text.Contains("派遣"))
                             {
-                                ClickOcrRegion(item);
+                                ClickChatOption(rs, item);
                             }
 
                             return true;
@@ -658,7 +756,7 @@ public partial class AutoSkipTrigger : ITaskTrigger
                     clickRegion = rs[random.Next(0, rs.Count)];
                 }
 
-                ClickOcrRegion(clickRegion);
+                ClickChatOption(rs, clickRegion);
                 AutoSkipLog(clickRegion.Text);
             }
             else
@@ -670,8 +768,37 @@ public partial class AutoSkipTrigger : ITaskTrigger
                 }
 
                 // 没OCR到文字，直接选择气泡选项
-                Thread.Sleep(_config.AfterChooseOptionSleepDelay);
-                ClickOcrRegion(clickRect);
+                // 手柄模式：使用方向键+A键
+                if (Simulation.CurrentInputMode == InputMode.XInput)
+                {
+                    var targetIndex = chatOptionResultList.IndexOf(clickRect);
+                    
+                    // 如果目标是第一个选项，直接按A键（游戏默认选中第一个）
+                    if (targetIndex == 0)
+                    {
+                        GamepadButtonPress(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.A);
+                    }
+                    else
+                    {
+                        // 按方向键下移动到目标选项（不需要先按上，游戏默认在第一个）
+                        for (var i = 0; i < targetIndex; i++)
+                        {
+                            GamepadButtonPress(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.Down, 100);
+                            Thread.Sleep(50);
+                        }
+                        
+                        // 按A键确认选择
+                        Thread.Sleep(100);
+                        GamepadButtonPress(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.A);
+                    }
+                }
+                // 键盘模式：直接点击
+                else
+                {
+                    Thread.Sleep(_config.AfterChooseOptionSleepDelay);
+                    ClickOcrRegion(clickRect);
+                }
+                
                 var msg = _config.IsClickFirstChatOption() ? "第一个" : "最后一个";
                 AutoSkipLog($"点击{msg}气泡选项");
             }
@@ -684,7 +811,15 @@ public partial class AutoSkipTrigger : ITaskTrigger
             using var pickRa = region.Find(AutoPickAssets.Instance.ChatPickRo);
             if (pickRa.IsExist())
             {
-                _postMessageSimulator?.KeyPressBackground(AutoPickAssets.Instance.PickVk);
+                // 根据当前输入模式选择按键
+                if (Simulation.CurrentInputMode == InputMode.XInput)
+                {
+                    GamepadButtonPress(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.Y);
+                }
+                else
+                {
+                    _postMessageSimulator?.KeyPressBackground(AutoPickAssets.Instance.PickVk);
+                }
                 AutoSkipLog("无气泡图标，但存在交互键，直接按下交互键");
             }
         }
@@ -709,6 +844,71 @@ public partial class AutoSkipTrigger : ITaskTrigger
         }
 
         AutoSkipLog(region.Text);
+    }
+
+    /// <summary>
+    /// 点击对话选项（支持手柄模式和键盘模式）
+    /// </summary>
+    /// <param name="allOptions">所有对话选项列表（从上到下排序）</param>
+    /// <param name="targetOption">要点击的目标选项</param>
+    /// <param name="optionType">选项类型（用于日志）</param>
+    private void ClickChatOption(List<Region> allOptions, Region targetOption, string optionType = "")
+    {
+        if (string.IsNullOrEmpty(optionType))
+        {
+            Thread.Sleep(_config.AfterChooseOptionSleepDelay);
+        }
+
+        // 手柄模式：使用方向键+A键选择
+        if (Simulation.CurrentInputMode == InputMode.XInput)
+        {
+            // 找到目标选项在列表中的索引
+            var targetIndex = allOptions.IndexOf(targetOption);
+            if (targetIndex == -1)
+            {
+                _logger.LogWarning("未找到目标选项在列表中的位置");
+                return;
+            }
+
+            // 判断是第一个还是最后一个
+            var positionText = targetIndex == 0 ? "第一个" : (targetIndex == allOptions.Count - 1 ? "最后一个" : $"第{targetIndex + 1}个");
+
+            // 如果目标是第一个选项，直接按A键（游戏默认选中第一个）
+            if (targetIndex == 0)
+            {
+                _logger.LogInformation($"🎮 手柄模式：按A键选择{positionText}选项：{targetOption.Text}");
+                GamepadButtonPress(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.A);
+            }
+            else
+            {
+                // 按方向键下移动到目标选项（不需要先按上，游戏默认在第一个）
+                _logger.LogInformation($"🎮 手柄模式：按方向键下{targetIndex}次，调整到{positionText}选项");
+                for (var i = 0; i < targetIndex; i++)
+                {
+                    GamepadButtonPress(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.Down, 100);
+                    Thread.Sleep(50);
+                }
+
+                // 按A键确认选择
+                Thread.Sleep(100);
+                _logger.LogInformation($"🎮 手柄模式：按A键选择选项：{targetOption.Text}");
+                GamepadButtonPress(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.A);
+            }
+        }
+        // 键盘模式：直接点击
+        else
+        {
+            if (UseBackgroundOperation && !SystemControl.IsGenshinImpactActive())
+            {
+                targetOption.BackgroundClick();
+            }
+            else
+            {
+                targetOption.Click();
+            }
+        }
+
+        AutoSkipLog(targetOption.Text);
     }
 
     private void HangoutOptionClick(HangoutOption option)
@@ -767,7 +967,15 @@ public partial class AutoSkipTrigger : ITaskTrigger
         {
             if (!Bv.IsInBigMapUi(content.CaptureRectArea))
             {
-                TaskContext.Instance().PostMessageSimulator.KeyPress(User32.VK.VK_ESCAPE);
+                // 根据当前输入模式选择按键：键盘模式按ESC，手柄模式按B键
+                if (Simulation.CurrentInputMode == InputMode.XInput)
+                {
+                    GamepadButtonPress(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.B);
+                }
+                else
+                {
+                    TaskContext.Instance().PostMessageSimulator.KeyPress(User32.VK.VK_ESCAPE);
+                }
 
                 AutoSkipLog("关闭弹出页");
                 pageCloseRoRa.Dispose();

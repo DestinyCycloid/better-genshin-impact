@@ -95,7 +95,12 @@ public partial class ChooseTalkOptionTask
         var region = CaptureToRectArea();
         if (Bv.IsInTalkUi(region))
         {
-            var chatOptionResultList = region.FindMulti(AutoSkipAssets.Instance.OptionIconRo);
+            // 根据输入模式选择不同的识别对象
+            var optionIconRo = Simulation.CurrentInputMode == InputMode.XInput 
+                ? AutoSkipAssets.Instance.OptionIconGamepadRo 
+                : AutoSkipAssets.Instance.OptionIconRo;
+            
+            var chatOptionResultList = region.FindMulti(optionIconRo);
             chatOptionResultList = [.. chatOptionResultList.OrderByDescending(r => r.Y)];
             if (chatOptionResultList.Count > 0)
             {
