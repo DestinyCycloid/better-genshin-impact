@@ -113,6 +113,20 @@ public class Simulation
     }
 
     /// <summary>
+    /// 使用左摇杆移动光标（仅在 XInput 模式下有效）
+    /// </summary>
+    /// <param name="deltaX">X轴移动距离（像素）</param>
+    /// <param name="deltaY">Y轴移动距离（像素）</param>
+    /// <param name="durationMs">移动持续时间（毫秒）</param>
+    public static void MoveLeftStickForCursor(int deltaX, int deltaY, int durationMs = 500)
+    {
+        if (Router.GetOutput() is XInputOutput xinput)
+        {
+            xinput.MoveLeftStickForCursor(deltaX, deltaY, durationMs);
+        }
+    }
+    
+    /// <summary>
     /// 释放所有按键/按钮（通过输入路由器）
     /// </summary>
     public static void ReleaseAllKey()

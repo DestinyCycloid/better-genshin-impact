@@ -48,10 +48,10 @@ public class QuickTeleportAssets : BaseAssets<QuickTeleportAssets>
             Name = "GoTeleport",
             RecognitionType = RecognitionTypes.TemplateMatch,
             TemplateImageMat = GameTaskManager.LoadAssetImage("QuickTeleport", "GoTeleport.png"),
-            RegionOfInterest = new Rect((int)(1440 * AssetScale),
+            RegionOfInterest = new Rect(CaptureRect.Width - (int)(350 * AssetScale),
                 CaptureRect.Height - (int)(120 * AssetScale),
-                (int)(100 * AssetScale),
-                (int)(120 * AssetScale)),
+                (int)(180 * AssetScale),
+                (int)(100 * AssetScale)),
             DrawOnWindow = false
         }.InitTemplate();
 
@@ -73,10 +73,11 @@ public class QuickTeleportAssets : BaseAssets<QuickTeleportAssets>
             Name = "MapScaleButton",
             RecognitionType = RecognitionTypes.TemplateMatch,
             TemplateImageMat = GameTaskManager.LoadAssetImage("QuickTeleport", "MapScaleButton.png"),
-            RegionOfInterest = new Rect((int)(30 * AssetScale),
-                (int)(440 * AssetScale),
-                (int)(40 * AssetScale),
-                (int)(200 * AssetScale)),
+            RegionOfInterest = new Rect((int)(80 * AssetScale),
+                (int)(450 * AssetScale),
+                (int)(50 * AssetScale),
+                (int)(400 * AssetScale)),
+            Threshold = 0.7,
             DrawOnWindow = false
         }.InitTemplate();
 
@@ -97,10 +98,11 @@ public class QuickTeleportAssets : BaseAssets<QuickTeleportAssets>
             Name = "MapSettingsButton",
             RecognitionType = RecognitionTypes.TemplateMatch,
             TemplateImageMat = GameTaskManager.LoadAssetImage("QuickTeleport", "MapSettingsButton.png"),
-            RegionOfInterest = new Rect((int)(25 * AssetScale),
+            RegionOfInterest = new Rect((int)(50 * AssetScale),
                 (int)(990 * AssetScale),
-                (int)(58 * AssetScale),
-                (int)(62 * AssetScale)),
+                (int)(150 * AssetScale),
+                (int)(80 * AssetScale)),
+            Threshold = 0.7,
             DrawOnWindow = false
         }.InitTemplate();
 
@@ -164,7 +166,7 @@ public class QuickTeleportAssets : BaseAssets<QuickTeleportAssets>
 
         if (name == "TeleportWaypoint.png")
         {
-            ro.Threshold = 0.7;
+            ro.Threshold = 0.6;  // 降低阈值以适应手柄模式UI
         }
 
         return ro;

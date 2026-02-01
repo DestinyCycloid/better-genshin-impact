@@ -74,11 +74,34 @@ public abstract class SceneBaseMapByTemplateMatch : SceneBaseMap
     public override Point2f GetMiniMapPosition(Mat colorMiniMapMat)
     {
         var result= new MatchResult();
+        
+        // 调试：保存输入图像
+        try
+        {
+            var debugPath = $"minimap_input_{DateTime.Now:HHmmss_fff}.png";
+            Cv2.ImWrite(debugPath, colorMiniMapMat);
+            TaskControl.Logger.LogDebug($"🔍 保存小地图输入图像: {debugPath}, 尺寸: {colorMiniMapMat.Width}x{colorMiniMapMat.Height}");
+        }
+        catch { }
+        
         var (miniMap, mask) = _miniMapPreprocessor.GetMiniMapAndMask(colorMiniMapMat);
+        
+        // 调试：保存预处理后的图像
+        try
+        {
+            var debugPath1 = $"minimap_processed_{DateTime.Now:HHmmss_fff}.png";
+            var debugPath2 = $"minimap_mask_{DateTime.Now:HHmmss_fff}.png";
+            Cv2.ImWrite(debugPath1, miniMap);
+            Cv2.ImWrite(debugPath2, mask);
+            TaskControl.Logger.LogDebug($"🔍 保存预处理图像: {debugPath1}, {debugPath2}");
+        }
+        catch { }
+        
         using (miniMap)
         using (mask)
         {
             GlobalMatch(miniMap, mask, ref result);
+            TaskControl.Logger.LogDebug($"🔍 全局匹配结果: 置信度={result.Confidence:F4}, 位置=({result.MapPos.X:F1}, {result.MapPos.Y:F1}), 成功={result.IsSuccess(2)}");
             return UpdateResult(result, 2);
         }
     }
@@ -107,6 +130,7 @@ public abstract class SceneBaseMapByTemplateMatch : SceneBaseMap
         using (mask)
         {
             LocalMatch(miniMap, mask, ConvertImageCoordinatesToGenshinMapCoordinates(new Point2f(prevX, prevY))!.Value, ref curResult);
+            TaskControl.Logger.LogDebug($"🔍 局部匹配结果: 置信度={curResult.Confidence:F4}, 位置=({curResult.MapPos.X:F1}, {curResult.MapPos.Y:F1}), rank={rank}, 成功={curResult.IsSuccess(rank)}");
             return UpdateResult(curResult, rank);
         }
     }

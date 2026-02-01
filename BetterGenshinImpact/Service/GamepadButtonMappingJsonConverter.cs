@@ -84,6 +84,29 @@ public class GamepadButtonMappingJsonConverter : JsonConverter<GamepadButtonMapp
                         mapping.IsLeftTrigger = reader.GetBoolean();
                     }
                     break;
+
+                case "iscombo":
+                    if (reader.TokenType == JsonTokenType.True || reader.TokenType == JsonTokenType.False)
+                    {
+                        mapping.IsCombo = reader.GetBoolean();
+                    }
+                    break;
+
+                case "modifierbutton":
+                    if (reader.TokenType == JsonTokenType.Number)
+                    {
+                        var intValue = reader.GetInt32();
+                        mapping.ModifierButton = (Xbox360Button)Enum.ToObject(typeof(Xbox360Button), intValue);
+                    }
+                    break;
+
+                case "mainbutton":
+                    if (reader.TokenType == JsonTokenType.Number)
+                    {
+                        var intValue = reader.GetInt32();
+                        mapping.MainButton = (Xbox360Button)Enum.ToObject(typeof(Xbox360Button), intValue);
+                    }
+                    break;
             }
         }
 
@@ -100,6 +123,16 @@ public class GamepadButtonMappingJsonConverter : JsonConverter<GamepadButtonMapp
         writer.WriteNumber("button", buttonValue);
         writer.WriteBoolean("isTrigger", value.IsTrigger);
         writer.WriteBoolean("isLeftTrigger", value.IsLeftTrigger);
+        
+        // 组合键相关字段
+        writer.WriteBoolean("isCombo", value.IsCombo);
+        if (value.IsCombo)
+        {
+            var modifierValue = Convert.ToInt32(Enum.ToObject(typeof(Xbox360Button), value.ModifierButton));
+            var mainValue = Convert.ToInt32(Enum.ToObject(typeof(Xbox360Button), value.MainButton));
+            writer.WriteNumber("modifierButton", modifierValue);
+            writer.WriteNumber("mainButton", mainValue);
+        }
         
         writer.WriteEndObject();
     }

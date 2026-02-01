@@ -3,6 +3,7 @@ using BetterGenshinImpact.Core.Recognition.OpenCv;
 using BetterGenshinImpact.Core.Script.Dependence;
 using BetterGenshinImpact.Core.Simulator;
 using BetterGenshinImpact.Core.Simulator.Extensions;
+using BetterGenshinImpact.Core.Config;
 using BetterGenshinImpact.GameTask.AutoGeniusInvokation.Exception;
 using BetterGenshinImpact.GameTask.AutoPathing;
 using BetterGenshinImpact.GameTask.AutoPathing.Model;
@@ -309,7 +310,37 @@ public class TpTask
         // 注意这个坐标的原点是中心区域某个点，所以要转换一下点击坐标（点击坐标是左上角为原点的坐标系），不能只是缩放
         var (clickX, clickY) = ConvertToGameRegionPosition(mapName, bigMapInAllMapRect, x, y);
         Logger.LogInformation("点击传送点");
-        CaptureToRectArea().ClickTo((int)clickX, (int)clickY);
+        
+        // 根据输入模式选择不同的点击方式
+        if (Simulation.CurrentInputMode == InputMode.XInput)
+        {
+            // 手柄模式：使用左摇杆移动光标到传送点
+            Logger.LogInformation("🎮 手柄模式：使用左摇杆移动光标到传送点");
+            
+            // 计算从屏幕中心到传送点的偏移
+            int centerX = _captureRect.Width / 2;
+            int centerY = _captureRect.Height / 2;
+            int deltaX = (int)(clickX - centerX);
+            int deltaY = (int)(clickY - centerY);
+            
+            Logger.LogInformation("  → 屏幕中心: ({CenterX}, {CenterY})", centerX, centerY);
+            Logger.LogInformation("  → 传送点位置: ({ClickX:F0}, {ClickY:F0})", clickX, clickY);
+            Logger.LogInformation("  → 移动偏移: ΔX={DeltaX}, ΔY={DeltaY}", deltaX, deltaY);
+            
+            // 使用左摇杆移动光标
+            Simulation.MoveLeftStickForCursor(deltaX, deltaY, 800); // 800ms移动时间
+            await Delay(200, ct);
+            
+            // 按A键选中传送点
+            Logger.LogInformation("  → 按A键选中传送点");
+            Simulation.SimulateAction(GIActions.Jump); // A键映射到Jump
+            await Delay(300, ct);
+        }
+        else
+        {
+            // 键鼠模式：直接点击传送点
+            CaptureToRectArea().ClickTo((int)clickX, (int)clickY);
+        }
 
         // 7. 触发一次快速传送功能
         await Delay(500, ct);
@@ -327,23 +358,42 @@ public class TpTask
     /// <param name="delayMs">如果未完成加载，检查加载页面的延时。</param>
     private async Task WaitForTeleportCompletion(int maxAttempts, int delayMs)
     {
+        Logger.LogInformation("⏳ 开始等待传送完成...");
         await Delay(delayMs, ct);
+        
         for (var i = 0; i < maxAttempts; i++)
         {
             using var capture = CaptureToRectArea();
-            if (Bv.IsInMainUi(capture))
+            var isInMainUi = Bv.IsInMainUi(capture);
+            Logger.LogDebug("第{Attempt}次检查: IsInMainUi={IsInMainUi}", i + 1, isInMainUi);
+            
+            if (isInMainUi)
             {
-                Logger.LogInformation("传送完成，返回主界面");
+                Logger.LogInformation("✅ 传送完成，返回主界面");
                 return;
             }
             //增加容错，小概率情况下碰到，前面点击传送失败
-            capture.Find(_assets.TeleportButtonRo, rg => rg.Click());
+            capture.Find(_assets.TeleportButtonRo, rg =>
+            {
+                // 根据输入模式选择不同的确认方式
+                if (Simulation.CurrentInputMode == InputMode.XInput)
+                {
+                    // 手柄模式：按A键
+                    Logger.LogInformation("🎮 手柄模式：容错 - 按A键确认传送");
+                    Simulation.SimulateAction(GIActions.Jump);
+                }
+                else
+                {
+                    // 键鼠模式：点击按钮
+                    rg.Click();
+                }
+            });
             await Delay(delayMs, ct);
             // 打开大地图期间推送的月卡会在传送之后直接显示，导致检测不到传送完成。
             await _blessingOfTheWelkinMoonTask.Start(ct);
         }
 
-        Logger.LogWarning("传送等待超时，换台电脑吧");
+        Logger.LogWarning("⚠️ 传送等待超时，换台电脑吧");
     }
 
     /// <summary>
@@ -418,37 +468,27 @@ public class TpTask
     /// </summary>
     private async Task<bool> TryToOpenBigMapUi()
     {
-        // M 打开地图识别当前位置，中心点为当前位置
         var ra1 = CaptureToRectArea();
-        if (!Bv.IsInBigMapUi(ra1))
+        var isInMapBefore = Bv.IsInBigMapUi(ra1);
+        
+        if (!isInMapBefore)
         {
-            Simulation.SendInput.SimulateAction(GIActions.OpenMap);
-            await Delay(1000, ct);
-            for (int i = 0; i < 3; i++)
-            {
-                ra1 = CaptureToRectArea();
-                if (!Bv.IsInBigMapUi(ra1))
-                {
-                    await Delay(500, ct);
-                }
-                else
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            Simulation.SimulateAction(GIActions.OpenMap);
+            // 手柄模式下打开地图需要更长时间（组合键执行约1.4秒 + 地图打开动画约1秒）
+            await Delay(2500, ct);
+            
+            ra1 = CaptureToRectArea();
+            return Bv.IsInBigMapUi(ra1);
         }
-        else
-        {
-            return true;
-        }
+        
+        return true;
     }
 
 
     public async Task<(double, double)> Tp(double tpX, double tpY, string mapName = "Teyvat", bool force = false)
     {
-        for (var i = 0; i < 3; i++)
+        // 临时禁用重试机制，避免手柄模式下重试时按A键导致进入其他页面
+        for (var i = 0; i < 1; i++)
         {
             try
             {
@@ -656,33 +696,116 @@ public class TpTask
     public async Task AdjustMapZoomLevel(double zoomLevel, double targetZoomLevel)
     {
         // Logger.LogInformation("调整地图缩放等级：{zoomLevel:0.000} -> {targetZoomLevel:0.000}", zoomLevel, targetZoomLevel);
-        int initialY = (int)(_tpConfig.ZoomStartY + (_tpConfig.ZoomEndY - _tpConfig.ZoomStartY) * (zoomLevel - 1) / 5d);
-        int targetY = (int)(_tpConfig.ZoomStartY + (_tpConfig.ZoomEndY - _tpConfig.ZoomStartY) * (targetZoomLevel - 1) / 5d);
-        await MouseClickAndMove(_tpConfig.ZoomButtonX, initialY, _tpConfig.ZoomButtonX, targetY);
-        await Delay(100, ct);
+        
+        // 根据输入模式选择不同的缩放方式
+        if (Simulation.CurrentInputMode == InputMode.XInput)
+        {
+            // 手柄模式：使用LT/RT扳机缩放
+            Logger.LogInformation("🎮 手柄模式：使用扳机缩放地图 {ZoomLevel:0.00} -> {TargetZoomLevel:0.00}", 
+                zoomLevel, targetZoomLevel);
+            
+            // 计算需要缩放的次数（每次按扳机大约改变0.5级）
+            double zoomDiff = targetZoomLevel - zoomLevel;
+            int zoomCount = (int)Math.Abs(zoomDiff * 2); // 每0.5级按一次
+            
+            if (zoomDiff > 0)
+            {
+                // 需要缩小地图（增大缩放等级）-> 使用RT（右扳机）
+                Logger.LogInformation("  → 使用RT缩小地图，按{Count}次", zoomCount);
+                for (int i = 0; i < zoomCount; i++)
+                {
+                    Simulation.SimulateAction(GIActions.ElementalBurst); // RT映射到ElementalBurst
+                    await Delay(100, ct);
+                }
+            }
+            else if (zoomDiff < 0)
+            {
+                // 需要放大地图（减小缩放等级）-> 使用LT（左扳机）
+                Logger.LogInformation("  → 使用LT放大地图，按{Count}次", zoomCount);
+                for (int i = 0; i < zoomCount; i++)
+                {
+                    Simulation.SetLeftTrigger(255);
+                    await Delay(50, ct);
+                    Simulation.SetLeftTrigger(0);
+                    await Delay(100, ct);
+                }
+            }
+            
+            await Delay(200, ct); // 等待缩放完成
+        }
+        else
+        {
+            // 键鼠模式：拖动缩放滑块
+            int initialY = (int)(_tpConfig.ZoomStartY + (_tpConfig.ZoomEndY - _tpConfig.ZoomStartY) * (zoomLevel - 1) / 5d);
+            int targetY = (int)(_tpConfig.ZoomStartY + (_tpConfig.ZoomEndY - _tpConfig.ZoomStartY) * (targetZoomLevel - 1) / 5d);
+            await MouseClickAndMove(_tpConfig.ZoomButtonX, initialY, _tpConfig.ZoomButtonX, targetY);
+            await Delay(100, ct);
+        }
     }
 
     private async Task MouseMoveMap(int pixelDeltaX, int pixelDeltaY, int steps = 10)
     {
-        double dpi = TaskContext.Instance().DpiScale;
-        int[] stepX = GenerateSteps((int)(pixelDeltaX / dpi), steps);
-        int[] stepY = GenerateSteps((int)(pixelDeltaY / dpi), steps);
-
-        // 随机起点以避免地图移动无效
-        GameCaptureRegion.GameRegionMove((rect, _) =>
-            (rect.Width / 2d + Random.Shared.Next(-rect.Width / 6, rect.Width / 6),
-                rect.Height / 2d + Random.Shared.Next(-rect.Height / 6, rect.Height / 6)));
-
-        Simulation.SendInput.Mouse.LeftButtonDown();
-        for (var i = 0; i < steps; i++)
+        // 根据输入模式选择不同的移动方式
+        if (Simulation.CurrentInputMode == InputMode.XInput)
         {
-            var i1 = i;
-            await Delay(_tpConfig.StepIntervalMilliseconds, ct);
-            // Simulation.SendInput.Mouse.MoveMouseBy(stepX[i], stepY[i]);
-            GameCaptureRegion.GameRegionMoveBy((_, scale) => (stepX[i1] * scale, stepY[i1] * scale));
+            // 手柄模式：使用左摇杆移动地图
+            Logger.LogInformation("🎮 手柄模式：使用左摇杆移动地图 ΔX={DeltaX}, ΔY={DeltaY}", 
+                pixelDeltaX, pixelDeltaY);
+            
+            // 计算移动距离和方向
+            double distance = Math.Sqrt(pixelDeltaX * pixelDeltaX + pixelDeltaY * pixelDeltaY);
+            if (distance < 1)
+            {
+                Logger.LogDebug("移动距离太小，跳过");
+                return;
+            }
+            
+            // 归一化方向
+            double dirX = pixelDeltaX / distance;
+            double dirY = pixelDeltaY / distance;
+            
+            // 计算移动时间（距离越大，时间越长）
+            int moveDurationMs = (int)Math.Min(distance * 5, 2000); // 最多2秒
+            
+            // 计算摇杆强度（固定使用较大的强度以加快移动）
+            short stickX = (short)(dirX * 25000); // 使用75%的最大强度
+            short stickY = (short)(-dirY * 25000); // Y轴反向
+            
+            Logger.LogInformation("  → 摇杆方向: ({DirX:F2}, {DirY:F2}), 持续时间: {Duration}ms", 
+                dirX, dirY, moveDurationMs);
+            Logger.LogInformation("  → 摇杆坐标: X={StickX}, Y={StickY}", stickX, stickY);
+            
+            // 推动摇杆
+            Simulation.SetLeftStick(stickX, stickY);
+            await Delay(moveDurationMs, ct);
+            
+            // 释放摇杆
+            Simulation.SetLeftStick(0, 0);
+            await Delay(100, ct);
         }
+        else
+        {
+            // 键鼠模式：拖动鼠标移动地图
+            double dpi = TaskContext.Instance().DpiScale;
+            int[] stepX = GenerateSteps((int)(pixelDeltaX / dpi), steps);
+            int[] stepY = GenerateSteps((int)(pixelDeltaY / dpi), steps);
 
-        Simulation.SendInput.Mouse.LeftButtonUp();
+            // 随机起点以避免地图移动无效
+            GameCaptureRegion.GameRegionMove((rect, _) =>
+                (rect.Width / 2d + Random.Shared.Next(-rect.Width / 6, rect.Width / 6),
+                    rect.Height / 2d + Random.Shared.Next(-rect.Height / 6, rect.Height / 6)));
+
+            Simulation.SendInput.Mouse.LeftButtonDown();
+            for (var i = 0; i < steps; i++)
+            {
+                var i1 = i;
+                await Delay(_tpConfig.StepIntervalMilliseconds, ct);
+                // Simulation.SendInput.Mouse.MoveMouseBy(stepX[i], stepY[i]);
+                GameCaptureRegion.GameRegionMoveBy((_, scale) => (stepX[i1] * scale, stepY[i1] * scale));
+            }
+
+            Simulation.SendInput.Mouse.LeftButtonUp();
+        }
     }
 
     private int[] GenerateSteps(int delta, int steps)
@@ -879,8 +1002,39 @@ public class TpTask
 
     internal async Task SwitchArea(string areaName)
     {
-        GameCaptureRegion.GameRegionClick((rect, scale) => (rect.Width - 160 * scale, rect.Height - 60 * scale));
-        await Delay(300, ct);
+        // 根据输入模式选择不同的打开方式
+        if (Simulation.CurrentInputMode == InputMode.XInput)
+        {
+            // 手柄模式：按Y键打开地区选择菜单
+            Logger.LogInformation("🎮 手柄模式：按Y键打开地区选择菜单");
+            Simulation.SimulateAction(GIActions.PickUpOrInteract); // Y键映射到PickUpOrInteract
+            await Delay(500, ct);
+            
+            // 先移动到左上角第一个位置（蒙德）
+            Logger.LogInformation("  → 重置到左上角起始位置（蒙德）");
+            for (int i = 0; i < 10; i++)
+            {
+                Simulation.SetLeftStick(0, 32767); // 向上
+                await Delay(80, ct);
+                Simulation.SetLeftStick(0, 0);
+                await Delay(50, ct);
+            }
+            for (int i = 0; i < 10; i++)
+            {
+                Simulation.SetLeftStick(-32767, 0); // 向左
+                await Delay(80, ct);
+                Simulation.SetLeftStick(0, 0);
+                await Delay(50, ct);
+            }
+            await Delay(200, ct);
+        }
+        else
+        {
+            // 键鼠模式：点击右下角按钮
+            GameCaptureRegion.GameRegionClick((rect, scale) => (rect.Width - 160 * scale, rect.Height - 60 * scale));
+            await Delay(300, ct);
+        }
+        
         using var ra = CaptureToRectArea();
         var list = ra.FindMulti(new RecognitionObject
         {
@@ -891,8 +1045,10 @@ public class TpTask
                 ["渊下宫"] = ["渊下宮"],
             },
         });
+        
         string minCountryLocalized = this.stringLocalizer.WithCultureGet(this.cultureInfo, areaName);
-        Region? matchRect = list.OrderByDescending(r => r.Y).FirstOrDefault(r => r.Text.Contains(minCountryLocalized));
+        Region? matchRect = list.FirstOrDefault(r => r.Text.Contains(minCountryLocalized));
+        
         if (matchRect == null)
         {
             Logger.LogWarning("切换区域失败：{Country}", areaName);
@@ -903,7 +1059,73 @@ public class TpTask
         }
         else
         {
-            matchRect.Click();
+            if (Simulation.CurrentInputMode == InputMode.XInput)
+            {
+                // 手柄模式：从蒙德位置导航到目标地区
+                Logger.LogInformation("🎮 手柄模式：从蒙德导航到地区 {AreaName}", areaName);
+                
+                // 定义地区网格布局（从左到右，从上到下）
+                // 第1行：蒙德(0,0), 璃月(1,0)
+                // 第2行：稻妻(0,1), 须弥(1,1)
+                // 第3行：枫丹(0,2), 纳塔(1,2)
+                // 第4行：挪德卡莱(0,3)
+                // 后面是独立地图...
+                var regionGrid = new Dictionary<string, (int x, int y)>
+                {
+                    ["蒙德"] = (0, 0),
+                    ["璃月"] = (1, 0),
+                    ["稻妻"] = (0, 1),
+                    ["须弥"] = (1, 1),
+                    ["枫丹"] = (0, 2),
+                    ["纳塔"] = (1, 2),
+                    ["挪德卡莱"] = (0, 3),
+                    ["渊下宫"] = (0, 4),
+                    ["层岩巨渊·地下矿区"] = (1, 4),
+                    ["旧日之海"] = (0, 5),
+                    ["远古圣山"] = (1, 5),
+                };
+                
+                if (regionGrid.TryGetValue(areaName, out var targetPos))
+                {
+                    Logger.LogInformation("  → 目标地区网格位置: ({X}, {Y})", targetPos.x, targetPos.y);
+                    
+                    // 从蒙德(0,0)移动到目标位置
+                    // 先向右移动
+                    for (int i = 0; i < targetPos.x; i++)
+                    {
+                        Logger.LogDebug("  → 向右移动");
+                        Simulation.SetLeftStick(32767, 0); // 向右
+                        await Delay(150, ct);
+                        Simulation.SetLeftStick(0, 0);
+                        await Delay(100, ct);
+                    }
+                    
+                    // 再向下移动
+                    for (int i = 0; i < targetPos.y; i++)
+                    {
+                        Logger.LogDebug("  → 向下移动");
+                        Simulation.SetLeftStick(0, -32767); // 向下
+                        await Delay(150, ct);
+                        Simulation.SetLeftStick(0, 0);
+                        await Delay(100, ct);
+                    }
+                    
+                    Logger.LogInformation("  → 已到达目标地区，按A键确认");
+                }
+                else
+                {
+                    Logger.LogWarning("  → 未知地区网格位置，尝试直接确认");
+                }
+                
+                // 按A键确认选择
+                Simulation.SimulateAction(GIActions.Jump);
+                await Delay(300, ct);
+            }
+            else
+            {
+                // 键鼠模式：直接点击
+                matchRect.Click();
+            }
             Logger.LogInformation("切换到区域：{Country}", areaName);
         }
 
@@ -931,15 +1153,43 @@ public class TpTask
         var hasTeleportButton = CheckTeleportButton(imageRegion);
         await Delay(50, ct);
         if (hasTeleportButton) return;   // 可以传送了，结束
+        
         // 3. 没点出传送按钮，且不存在外部地图关闭按钮
         // 说明只有两种可能，a. 点出来的是未激活传送点或者标点 b. 选择传送点选项列表
         var mapCloseRa1 = imageRegion.Find(_assets.MapCloseButtonRo);
         if (!mapCloseRa1.IsEmpty()) throw new TpPointNotActivate("传送点未激活或不存在");
 
+        // 手柄模式下，按A键后需要等待选项列表弹出
+        if (Simulation.CurrentInputMode == InputMode.XInput)
+        {
+            Logger.LogDebug("🎮 手柄模式：等待选项列表弹出...");
+            await Delay(500, ct);
+        }
+
         // 4. 循环判断选项列表是否有传送点(未激活点位也在里面)
         var hasMapChooseIcon = CheckMapChooseIcon(imageRegion);
         // 没有传送点说明不是传送点
-        if (!hasMapChooseIcon) throw new TpPointNotActivate("选项列表不存在传送点");
+        // 临时注释：手柄模式下可能自动选中第一个选项，跳过图标识别检查
+        if (!hasMapChooseIcon)
+        {
+            if (Simulation.CurrentInputMode == InputMode.XInput)
+            {
+                Logger.LogWarning("⚠️ 手柄模式：未识别到图标，但继续尝试等待传送按钮（可能已自动选中）");
+            }
+            else
+            {
+                throw new TpPointNotActivate("选项列表不存在传送点");
+            }
+        }
+        
+        Logger.LogInformation("🔍 开始等待传送按钮出现...");
+        
+        // 等待传送点详情页面完全打开
+        await Delay(1000, ct);
+        
+        // 重新获取当前画面
+        using var currentRa = CaptureToRectArea();
+        
         var teleportButtonFound = await NewRetry.WaitForElementAppear(
             _assets.TeleportButtonRo,
             () => { },
@@ -947,21 +1197,45 @@ public class TpTask
             6,
             300
         );
+        
+        if (teleportButtonFound)
+        {
+            Logger.LogInformation("✅ 成功识别到传送按钮");
+        }
+        else
+        {
+            Logger.LogWarning("❌ 未识别到传送按钮");
+        }
+        
         if (!teleportButtonFound) throw new TpPointNotActivate("选项列表的传送点未激活");
-        await NewRetry.WaitForElementDisappear(
-            _assets.TeleportButtonRo,
-            screen =>
-            {
-                screen.Find(_assets.TeleportButtonRo, ra =>
+        
+        // 根据输入模式选择不同的确认方式
+        if (Simulation.CurrentInputMode == InputMode.XInput)
+        {
+            // 手柄模式：按A键确认传送
+            Logger.LogInformation("🎮 手柄模式：按A键确认传送");
+            await Delay(300, ct);
+            Simulation.SimulateAction(GIActions.Jump); // A键
+            await Delay(300, ct);
+        }
+        else
+        {
+            // 键鼠模式：点击传送按钮
+            await NewRetry.WaitForElementDisappear(
+                _assets.TeleportButtonRo,
+                screen =>
                 {
-                    ra.Click();
-                    ra.Dispose();
-                });
-            },
-            ct,
-            6,
-            300
-        );
+                    screen.Find(_assets.TeleportButtonRo, ra =>
+                    {
+                        ra.Click();
+                        ra.Dispose();
+                    });
+                },
+                ct,
+                6,
+                300
+            );
+        }
     }
 
     private bool CheckTeleportButton(ImageRegion imageRegion)
@@ -969,7 +1243,18 @@ public class TpTask
         var hasTeleportButton = false;
         imageRegion.Find(_assets.TeleportButtonRo, ra =>
         {
-            ra.Click();
+            // 根据输入模式选择不同的确认方式
+            if (Simulation.CurrentInputMode == InputMode.XInput)
+            {
+                // 手柄模式：按A键确认
+                Logger.LogInformation("🎮 手柄模式：检测到传送按钮，按A键确认");
+                Simulation.SimulateAction(GIActions.Jump); // A键
+            }
+            else
+            {
+                // 键鼠模式：点击按钮
+                ra.Click();
+            }
             hasTeleportButton = true;
         });
         return hasTeleportButton;
@@ -987,6 +1272,9 @@ public class TpTask
 
         // 全匹配一遍
         var rResultList = MatchTemplateHelper.MatchMultiPicForOnePic(imageRegion.CacheGreyMat[_assets.MapChooseIconRoi], _assets.MapChooseIconGreyMatList);
+        
+        Logger.LogDebug("CheckMapChooseIcon: 识别到 {Count} 个图标", rResultList.Count);
+        
         // 按高度排序
         if (rResultList.Count > 0)
         {
@@ -994,6 +1282,9 @@ public class TpTask
             // 点击最高的
             foreach (var iconRect in rResultList)
             {
+                Logger.LogDebug("  → 图标位置: X={X}, Y={Y}, W={W}, H={H}", 
+                    iconRect.X, iconRect.Y, iconRect.Width, iconRect.Height);
+                
                 // 200宽度的文字区域
                 using var ra = imageRegion.DeriveCrop(_assets.MapChooseIconRoi.X + iconRect.X + iconRect.Width, _assets.MapChooseIconRoi.Y + iconRect.Y - 8, 200, iconRect.Height + 16);
                 using var textRegion = ra.Find(new RecognitionObject
@@ -1003,6 +1294,9 @@ public class TpTask
                     LowerColor = new Scalar(249, 249, 249), // 只取白色文字
                     UpperColor = new Scalar(255, 255, 255),
                 });
+                
+                Logger.LogDebug("  → OCR识别文字: '{Text}'", textRegion.Text);
+                
                 if (string.IsNullOrEmpty(textRegion.Text) || textRegion.Text.Length == 1)
                 {
                     continue;
@@ -1012,10 +1306,27 @@ public class TpTask
                 var time = TaskContext.Instance().Config.QuickTeleportConfig.TeleportListClickDelay;
                 time = time < 500 ? 500 : time;
                 Thread.Sleep(time);
-                ra.Click();
+                
+                // 根据输入模式选择不同的点击方式
+                if (Simulation.CurrentInputMode == InputMode.XInput)
+                {
+                    // 手柄模式：按A键选择
+                    Logger.LogInformation("🎮 手柄模式：按A键选择传送选项");
+                    Simulation.SimulateAction(GIActions.Jump);
+                }
+                else
+                {
+                    // 键鼠模式：点击选项
+                    ra.Click();
+                }
+                
                 hasMapChooseIcon = true;
                 break;
             }
+        }
+        else
+        {
+            Logger.LogWarning("CheckMapChooseIcon: 未识别到任何图标！");
         }
 
         return hasMapChooseIcon;

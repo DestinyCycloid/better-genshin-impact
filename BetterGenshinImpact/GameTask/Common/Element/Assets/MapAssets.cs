@@ -17,6 +17,6 @@ public class MapAssets : BaseAssets<MapAssets>
 
     public MapAssets()
     {
-        MimiMapRect = new Rect((int)Math.Round(62 * AssetScale), (int)Math.Round(19 * AssetScale), (int)Math.Round(212 * AssetScale), (int)Math.Round(212 * AssetScale));
+        MimiMapRect = new Rect((int)Math.Round(92 * AssetScale), (int)Math.Round(19 * AssetScale), (int)Math.Round(212 * AssetScale), (int)Math.Round(212 * AssetScale));
     }
 }

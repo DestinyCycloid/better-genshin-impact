@@ -60,13 +60,13 @@ public partial class GamepadBindingsConfig : ObservableObject
     /// 落下
     /// </summary>
     [ObservableProperty]
-    private GamepadButtonMapping _drop = GamepadButtonMapping.FromButton(Xbox360Button.B);
+    private GamepadButtonMapping _drop = GamepadButtonMapping.FromButton(Xbox360Button.X);
 
     /// <summary>
     /// 快捷使用小道具
     /// </summary>
     [ObservableProperty]
-    private GamepadButtonMapping _quickUseGadget = GamepadButtonMapping.FromButton(Xbox360Button.RightShoulder);
+    private GamepadButtonMapping _quickUseGadget = GamepadButtonMapping.FromCombo(Xbox360Button.LeftShoulder, Xbox360Button.B);
 
     #endregion
 
@@ -96,6 +96,12 @@ public partial class GamepadBindingsConfig : ObservableObject
     [ObservableProperty]
     private GamepadButtonMapping _switchMember4 = GamepadButtonMapping.FromButton(Xbox360Button.Down);
 
+    /// <summary>
+    /// 切换小队角色5
+    /// </summary>
+    [ObservableProperty]
+    private GamepadButtonMapping _switchMember5 = GamepadButtonMapping.FromCombo(Xbox360Button.LeftShoulder, Xbox360Button.Y);
+
     #endregion
 
     #region 菜单操作映射
@@ -117,6 +123,12 @@ public partial class GamepadBindingsConfig : ObservableObject
     /// </summary>
     [ObservableProperty]
     private Xbox360Button _openInventory = Xbox360Button.Guide;
+
+    /// <summary>
+    /// 打开地图
+    /// </summary>
+    [ObservableProperty]
+    private Xbox360Button _openMap = Xbox360Button.Back;
 
     #endregion
 
@@ -189,6 +201,7 @@ public partial class GamepadBindingsConfig : ObservableObject
             GIActions.SwitchMember2 => SwitchMember2,
             GIActions.SwitchMember3 => SwitchMember3,
             GIActions.SwitchMember4 => SwitchMember4,
+            GIActions.SwitchMember5 => SwitchMember5,
             GIActions.ShortcutWheel => null,
             GIActions.OpenPaimonMenu => null,
             GIActions.OpenInventory => null,

@@ -445,6 +445,8 @@ public partial class MainWindowViewModel : ObservableObject, IViewModel
         }
 
         // 每个设备只运行一次 | 在Wine上会崩溃
+        // 已禁用启动欢迎弹窗
+        /*
         if (!Config.CommonConfig.OnceHadRunDeviceIdList.Contains(deviceId) && !WinePlatformAddon.IsRunningOnWine)
         {
             WelcomeDialog prompt = new WelcomeDialog
@@ -457,6 +459,7 @@ public partial class MainWindowViewModel : ObservableObject, IViewModel
             Config.CommonConfig.OnceHadRunDeviceIdList.Add(deviceId);
             _configService.Save();
         }
+        */
     }
     
     private async Task CheckRedeemCodeFeedsUpdateAsync()
