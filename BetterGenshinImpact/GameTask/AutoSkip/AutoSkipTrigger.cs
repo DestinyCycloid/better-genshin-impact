@@ -500,6 +500,7 @@ public partial class AutoSkipTrigger : ITaskTrigger
 
         if (isInChat)
         {
+            Thread.Sleep(_config.AfterChooseOptionSleepDelay);
             var fKey = AutoPickAssets.Instance.PickVk;
             if (_config.IsClickFirstChatOption())
             {
