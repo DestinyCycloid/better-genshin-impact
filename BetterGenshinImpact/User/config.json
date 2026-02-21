@@ -1,10 +1,26 @@
 {
-  "hotKeyConfig": {
-    "oneKeyFightHotkey": "F9",
-    "turnAroundToggleHotkey": "F10"
-  },
-  "macroConfig": {
-    "combatMacroEnabled": true,
-    "combatMacroHotkeyMode": "触发"
-  }
+    "hotKeyConfig":  {
+                         "oneKeyFightHotkey":  "F9",
+                         "turnAroundToggleHotkey":  "F10"
+                     },
+    "macroConfig":  {
+                        "combatMacroEnabled":  true,
+                        "combatMacroHotkeyMode":  "触发"
+                    },
+    "skillCdConfig":  {
+                          "textNormalColor":  "#DA4A23FF",
+                          "enabled":  true,
+                          "customCdList":  [
+
+                                           ],
+                          "gap":  91.2,
+                          "pX":  1520,
+                          "backgroundReadyColor":  "#FFFFFFFF",
+                          "scale":  1,
+                          "hideWhenZero":  false,
+                          "triggerOnSkillUse":  true,
+                          "pY":  245,
+                          "backgroundNormalColor":  "#FFFFFFFF",
+                          "textReadyColor":  "#5DCC17FF"
+                      }
 }

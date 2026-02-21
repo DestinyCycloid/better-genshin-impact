@@ -137,7 +137,7 @@ public partial class OtherConfig : ObservableObject
         ///     PaddleOCR 识别置信度阈值 (0~1)，低于此阈值的字符将被过滤
         /// </summary>
         [ObservableProperty]
-        private double _paddleOcrThreshold = 0.5;
+        private double _paddleOcrThreshold = 0.4;
 
         partial void OnPaddleOcrThresholdChanged(double value)
         {

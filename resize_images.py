@@ -12,7 +12,7 @@ import os
 target_dir = r"C:\Home\demo\BGI\BetterGenshinImpact\GameTask\Common\Element\Assets\1920x1080"
 
 # 需要缩放的图片文件名
-image_files = ["paimon_menu.png"]
+image_files = ["index_1_gamepad.png", "index_2_gamepad.png", "index_3_gamepad.png", "index_4_gamepad.png"]
 
 def resize_image(image_path):
     """

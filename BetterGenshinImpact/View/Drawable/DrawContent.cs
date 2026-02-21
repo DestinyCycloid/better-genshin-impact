@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 
 namespace BetterGenshinImpact.View.Drawable;
@@ -117,11 +117,13 @@ public class DrawContent
             {
                 TextList.TryRemove(key, out _);
                 changed = true;
+                System.Diagnostics.Debug.WriteLine($"[DrawContent] 移除文本列表: {key}");
             }
             else
             {
                 TextList[key] = list;
                 changed = true;
+                System.Diagnostics.Debug.WriteLine($"[DrawContent] 更新文本列表: {key}, 数量: {list.Count}");
             }
         }
         else
@@ -130,11 +132,13 @@ public class DrawContent
             {
                 TextList[key] = list;
                 changed = true;
+                System.Diagnostics.Debug.WriteLine($"[DrawContent] 添加文本列表: {key}, 数量: {list.Count}");
             }
         }
 
         if (changed)
         {
+            System.Diagnostics.Debug.WriteLine($"[DrawContent] 触发 MaskWindow.Refresh()");
             MaskWindow.Instance().Refresh();
         }
     }

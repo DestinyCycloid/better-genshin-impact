@@ -13,7 +13,7 @@ public partial class SkillCdConfig : ObservableObject
     /// 是否启用
     /// </summary>
     [ObservableProperty]
-    private bool _enabled = false;
+    private bool _enabled = true;
 
     /// <summary>
     /// 特定角色CD修正配置列表
@@ -25,7 +25,7 @@ public partial class SkillCdConfig : ObservableObject
     /// 使用战技时触发（E键）
     /// </summary>
     [ObservableProperty]
-    private bool _triggerOnSkillUse = false;
+    private bool _triggerOnSkillUse = true;
 
     /// <summary>
     /// 冷却为0时隐藏

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using BetterGenshinImpact.Core.Recognition;
 using BetterGenshinImpact.Core.Recognition.OpenCv;
 using BetterGenshinImpact.GameTask.AutoFight.Assets;
 using BetterGenshinImpact.GameTask.Common;
@@ -19,9 +20,14 @@ namespace BetterGenshinImpact.GameTask.AutoFight.Model;
 public class PartyAvatarSideIndexHelper
 {
     /// <summary>
-    /// 角色编号以当前模板匹配结果的情况下的Y轴公差
+    /// 角色编号以当前模板匹配结果的情况下的Y轴公差（键鼠模式）
     /// </summary>
     private static readonly int IndexRectDistanceY = 96;
+    
+    /// <summary>
+    /// 手柄模式角色编号Y轴间距
+    /// </summary>
+    private static readonly int IndexRectDistanceYGamepad = 75;
 
     /// <summary>
     /// 检查当前联机状态
@@ -86,17 +92,20 @@ public class PartyAvatarSideIndexHelper
     /// <summary>
     /// 根据已知的某个角色编号位置，计算其他角色编号的位置
     /// </summary>
-    /// <param name="knownIndex">已知编号</param>
-    /// <param name="knownRect">已知编号矩形</param>
-    /// <param name="targetIndex">目标编号</param>
-    /// <returns>目标编号矩形</returns>
     public static Rect GetIndexRectFromKnownIndexRect(int knownIndex, Rect knownRect, int targetIndex)
     {
         var s = TaskContext.Instance().SystemInfo.AssetScale;
-
-        //  y_k + (n - k) * d
         int y = knownRect.Y + (targetIndex - knownIndex) * (int)(IndexRectDistanceY * s);
-
+        return new Rect(knownRect.X, y, knownRect.Width, knownRect.Height);
+    }
+    
+    /// <summary>
+    /// 手柄模式：根据已知的某个角色编号位置，计算其他角色编号的位置
+    /// </summary>
+    public static Rect GetIndexRectFromKnownIndexRectGamepad(int knownIndex, Rect knownRect, int targetIndex)
+    {
+        var s = TaskContext.Instance().SystemInfo.AssetScale;
+        int y = knownRect.Y + (targetIndex - knownIndex) * (int)(IndexRectDistanceYGamepad * s);
         return new Rect(knownRect.X, y, knownRect.Width, knownRect.Height);
     }
 
@@ -127,11 +136,21 @@ public class PartyAvatarSideIndexHelper
     {
         List<Rect> avatarSideIconRectList;
         List<Rect> avatarIndexRectList;
+        
+        // 手柄模式使用专用配置
+        bool isGamepadMode = Core.Simulator.Simulation.CurrentInputMode == Core.Simulator.InputMode.XInput;
+        
         if (multiGameStatus.IsInMultiGame)
         {
             var p = multiGameStatus.IsHost ? "1p" : "p";
             avatarSideIconRectList = new List<Rect>(AutoFightAssets.Instance.AvatarSideIconRectListMap[$"{p}_{multiGameStatus.PlayerCount}"]);
             avatarIndexRectList = new List<Rect>(AutoFightAssets.Instance.AvatarIndexRectListMap[$"{p}_{multiGameStatus.PlayerCount}"]);
+        }
+        else if (isGamepadMode)
+        {
+            // 手柄模式：使用手柄专用配置
+            avatarIndexRectList = new List<Rect>(AutoFightAssets.Instance.AvatarIndexRectListGamepad);
+            avatarSideIconRectList = GetAvatarSideIconRectFromIndexRect(avatarIndexRectList, TaskContext.Instance().SystemInfo);
         }
         else
         {
@@ -161,57 +180,83 @@ public class PartyAvatarSideIndexHelper
 
     public static (List<Rect>, List<Rect>) GetAllIndexRectsNew(ImageRegion imageRegion, MultiGameStatus multiGameStatus, ILogger logger, ElementAssets elementAssets, ISystemInfo systemInfo)
     {
-        // 找到编号块
-        var i1 = imageRegion.Find(elementAssets.Index1);
-        var i2 = imageRegion.Find(elementAssets.Index2);
-        var i3 = imageRegion.Find(elementAssets.Index3);
-        var i4 = imageRegion.Find(elementAssets.Index4);
-        List<Rect> indexRectList = [i1.ToRect(), i2.ToRect(), i3.ToRect(), i4.ToRect()];
-        int existNum = indexRectList.Count(indexRect => indexRect != default);
-        if (existNum == multiGameStatus.MaxControlAvatarCount)
+        bool isGamepadMode = Core.Simulator.Simulation.CurrentInputMode == Core.Simulator.InputMode.XInput;
+        var autoFightAssets = AutoFightAssets.Instance;
+        
+        RecognitionObject index1, index2, index3, index4;
+        RecognitionObject currentAvatarThreshold;
+        
+        if (isGamepadMode)
         {
-            // 识别存在个数和当前能控制的最大角色数相等,意味者全部识别,直接返回
-            var notNullIndexRectList = indexRectList.Where(r => r != default).ToList();
-            return (notNullIndexRectList, GetAvatarSideIconRectFromIndexRect(notNullIndexRectList, systemInfo));
+            index1 = autoFightAssets.Index1Gamepad;
+            index2 = autoFightAssets.Index2Gamepad;
+            index3 = autoFightAssets.Index3Gamepad;
+            index4 = autoFightAssets.Index4Gamepad;
+            currentAvatarThreshold = autoFightAssets.CurrentAvatarThresholdGamepad;
         }
         else
         {
-            // 为什么这里要用箭头确认一遍？因为出战角色编号框的识别率不是100%，需要用箭头来辅助确认。这也是为了保证非满队情况下的队伍识别率
-            // 非出战角色编号框识别率100%
-            var curr = imageRegion.Find(elementAssets.CurrentAvatarThreshold); // 当前出战角色标识
+            index1 = elementAssets.Index1;
+            index2 = elementAssets.Index2;
+            index3 = elementAssets.Index3;
+            index4 = elementAssets.Index4;
+            currentAvatarThreshold = elementAssets.CurrentAvatarThreshold;
+        }
+        
+        var i1 = imageRegion.Find(index1);
+        var i2 = imageRegion.Find(index2);
+        var i3 = imageRegion.Find(index3);
+        var i4 = imageRegion.Find(index4);
+        List<Rect> indexRectList = [i1.ToRect(), i2.ToRect(), i3.ToRect(), i4.ToRect()];
+        int existNum = indexRectList.Count(indexRect => indexRect != default);
+        
+        logger.LogDebug("[SkillCD] 队伍识别: isGamepadMode={Mode}, existNum={Exist}, expected={Expected}", 
+            isGamepadMode, existNum, multiGameStatus.MaxControlAvatarCount);
+        
+        if (existNum == multiGameStatus.MaxControlAvatarCount)
+        {
+            var notNullIndexRectList = indexRectList.Where(r => r != default).ToList();
+            return (notNullIndexRectList, GetAvatarSideIconRectFromIndexRectWithMode(notNullIndexRectList, systemInfo, isGamepadMode));
+        }
+        else
+        {
+            var curr = imageRegion.Find(currentAvatarThreshold);
             if (curr.IsExist())
             {
                 var (knownIndex, knownRect) = GetKnownIndexAndRect(indexRectList);
                 if (knownRect == default)
                 {
-                    // 没有已知的编号位置，这种情况下可能是单人队
-                    // 直接用出战角色标识来反推
                     var oneIndexRect = GetIndexRectFromKnownCurrentAvatarFlag(curr.ToRect());
                     logger.LogInformation("当前编队中可能只存在一个角色（且角色编号未正确识别）");
-                    return ([oneIndexRect], [GetAvatarSideIconRectFromIndexRect(oneIndexRect, systemInfo)]);
+                    return ([oneIndexRect], GetAvatarSideIconRectFromIndexRectWithMode([oneIndexRect], systemInfo, isGamepadMode));
                 }
                 else
                 {
-                    // 有已知的编号位置，通过已知位置来推测其他位置
                     for (int i = 0; i < indexRectList.Count; i++)
                     {
                         if (indexRectList[i] == default)
                         {
-                            var rect = GetIndexRectFromKnownIndexRect(knownIndex, knownRect, i + 1);
+                            Rect rect;
+                            if (isGamepadMode)
+                            {
+                                rect = GetIndexRectFromKnownIndexRectGamepad(knownIndex, knownRect, i + 1);
+                            }
+                            else
+                            {
+                                rect = GetIndexRectFromKnownIndexRect(knownIndex, knownRect, i + 1);
+                            }
                             if (IsIntersecting(curr.Y, curr.Height, rect.Y, rect.Height))
                             {
-                                // 如果和当前出战角色标识相交，说明这个位置是正确的
                                 indexRectList[i] = rect;
                                 logger.LogInformation("当前出战角色未正确识别，通过出战标识推测角色编号为{Index}", i + 1);
                             }
                         }
                     }
 
-                    // 校验推测结果（编号从 1 开始必定连续）
                     if (AreNullsAtEnd(indexRectList))
                     {
                         var notNullIndexRectList = indexRectList.Where(r => r != default).ToList();
-                        return (notNullIndexRectList, GetAvatarSideIconRectFromIndexRect(notNullIndexRectList, systemInfo));
+                        return (notNullIndexRectList, GetAvatarSideIconRectFromIndexRectWithMode(notNullIndexRectList, systemInfo, isGamepadMode));
                     }
                     else
                     {
@@ -221,7 +266,6 @@ public class PartyAvatarSideIndexHelper
             }
             else
             {
-                // 没有出战角色标识的情况下，直接抛出错误走写死逻辑
                 throw new Exception("找不到出战角色编号块与当前出战角色标识！");
             }
         }
@@ -245,10 +289,37 @@ public class PartyAvatarSideIndexHelper
         var s = systemInfo.AssetScale;
         return new Rect(indexRect.X - (int)(91 * s), indexRect.Y - (int)(47 * s), (int)(82 * s), (int)(82 * s));
     }
+    
+    /// <summary>
+    /// 手柄模式：根据角色编号位置计算头像位置
+    /// 手柄模式下头像相对于编号的偏移与键鼠模式不同
+    /// </summary>
+    public static Rect GetAvatarSideIconRectFromIndexRectGamepad(Rect indexRect, ISystemInfo systemInfo, int avatarIndex)
+    {
+        var s = systemInfo.AssetScale;
+        // 手柄模式下，头像Y偏移需要根据角色索引调整
+        // 基础偏移：X向左91像素，Y向上47像素
+        // 额外Y偏移：统一为15
+        int extraYOffset = 15;
+        // 手柄模式头像框：右边界向左缩进10像素（宽度72），其他边界不变
+        return new Rect(indexRect.X - (int)(91 * s), indexRect.Y - (int)(47 * s) + (int)(extraYOffset * s), (int)(72 * s), (int)(82 * s));
+    }
 
     public static List<Rect> GetAvatarSideIconRectFromIndexRect(List<Rect> indexRect, ISystemInfo systemInfo)
     {
         return indexRect.Select(r => GetAvatarSideIconRectFromIndexRect(r, systemInfo)).ToList();
+    }
+    
+    public static List<Rect> GetAvatarSideIconRectFromIndexRectWithMode(List<Rect> indexRect, ISystemInfo systemInfo, bool isGamepadMode)
+    {
+        if (isGamepadMode)
+        {
+            return indexRect.Select((r, i) => GetAvatarSideIconRectFromIndexRectGamepad(r, systemInfo, i + 1)).ToList();
+        }
+        else
+        {
+            return indexRect.Select(r => GetAvatarSideIconRectFromIndexRect(r, systemInfo)).ToList();
+        }
     }
 
     public static bool IsIntersecting(double y1, double h1, double y2, double h2)
@@ -369,6 +440,7 @@ public class PartyAvatarSideIndexHelper
     {
         if (rectArray.Length == 1)
         {
+            TaskControl.Logger.LogDebug("[FindActiveIndexRectByColor] 只有一个角色，直接返回1");
             return 1;
         }
 
@@ -384,33 +456,44 @@ public class PartyAvatarSideIndexHelper
                 if (IsWhiteRect(indexMat))
                 {
                     whiteCount++;
+                    TaskControl.Logger.LogDebug("[FindActiveIndexRectByColor] 角色{i}是白色矩形", i + 1);
                 }
                 else
                 {
                     notWhiteRectNum = i + 1;
+                    TaskControl.Logger.LogDebug("[FindActiveIndexRectByColor] 角色{i}不是白色矩形", i + 1);
                 }
             }
 
+            TaskControl.Logger.LogDebug("[FindActiveIndexRectByColor] whiteCount={WhiteCount}, notWhiteRectNum={NotWhiteRectNum}, total={Total}", 
+                whiteCount, notWhiteRectNum, rectArray.Length);
+
             if (whiteCount == rectArray.Length - 1)
             {
+                TaskControl.Logger.LogDebug("[FindActiveIndexRectByColor] 通过白色计数识别出战角色编号为{Index}", notWhiteRectNum);
                 return notWhiteRectNum;
             }
             else
             {
-                // 方法2：边缘像素白色比例
+                TaskControl.Logger.LogDebug("[FindActiveIndexRectByColor] 白色计数不匹配，尝试边缘颜色检测");
                 int m2 = FindActiveIndexRectByEdgeColor(mats);
                 if (m2 > 0)
                 {
+                    TaskControl.Logger.LogDebug("[FindActiveIndexRectByColor] 通过边缘颜色识别出战角色编号为{Index}", m2);
                     return m2;
                 }
 
-                // 方法3：使用更加靠谱的差值识别（-1是未识别），但是不支持非满队
                 if (mats.Length == 4)
                 {
-                    return ImageDifferenceDetector.FindMostDifferentImage(mats);
+                    TaskControl.Logger.LogDebug("[FindActiveIndexRectByColor] 边缘颜色检测失败，尝试图像差异检测");
+                    int diffIndex = ImageDifferenceDetector.FindMostDifferentImage(mats);
+                    int result = diffIndex >= 0 ? diffIndex + 1 : -1;
+                    TaskControl.Logger.LogDebug("[FindActiveIndexRectByColor] 图像差异检测结果: diffIndex={DiffIndex}, result={Result}", diffIndex, result);
+                    return result;
                 }
                 else
                 {
+                    TaskControl.Logger.LogDebug("[FindActiveIndexRectByColor] 角色数量不是4，无法使用图像差异检测，返回-1");
                     return -1;
                 }
             }
@@ -428,9 +511,11 @@ public class PartyAvatarSideIndexHelper
     {
         var count1 = OpenCvCommonHelper.CountGrayMatColor(indexMat, 251, 255); // 白
         var count2 = OpenCvCommonHelper.CountGrayMatColor(indexMat, 50, 54); // 黑色文字
-        if ((count1 + count2) * 1.0 / (indexMat.Width * indexMat.Height) > 0.35)
+        double ratio = (count1 + count2) * 1.0 / (indexMat.Width * indexMat.Height);
+        TaskControl.Logger.LogDebug("[IsWhiteRect] count1(白)={Count1}, count2(黑)={Count2}, ratio={Ratio:F3}, isWhite={IsWhite}", 
+            count1, count2, ratio, ratio > 0.35);
+        if (ratio > 0.35)
         {
-            // Debug.WriteLine($"白色矩形占比{(count1 + count2) * 1.0 / (indexMat.Width * indexMat.Height)}");
             return true;
         }
 
@@ -451,7 +536,12 @@ public class PartyAvatarSideIndexHelper
             return 1;
         }
 
-        var curr = imageRegion.Find(ElementAssets.Instance.CurrentAvatarThreshold); // 当前出战角色标识
+        bool isGamepadMode = Core.Simulator.Simulation.CurrentInputMode == Core.Simulator.InputMode.XInput;
+        var currentAvatarThreshold = isGamepadMode 
+            ? AutoFightAssets.Instance.CurrentAvatarThresholdGamepad 
+            : ElementAssets.Instance.CurrentAvatarThreshold;
+        
+        var curr = imageRegion.Find(currentAvatarThreshold);
         if (curr.IsEmpty())
         {
             return -1;
@@ -459,7 +549,8 @@ public class PartyAvatarSideIndexHelper
 
         for (int i = 0; i < rectArray.Length; i++)
         {
-            if (IsIntersecting(curr.Y, curr.Height, rectArray[i].Y, rectArray[i].Height))
+            bool intersects = IsIntersecting(curr.Y, curr.Height, rectArray[i].Y, rectArray[i].Height);
+            if (intersects)
             {
                 return i + 1;
             }

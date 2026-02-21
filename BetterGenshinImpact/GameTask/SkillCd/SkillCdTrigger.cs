@@ -1,10 +1,12 @@
 using BetterGenshinImpact.Core.Config;
 using BetterGenshinImpact.Core.Recognition.OCR;
+using BetterGenshinImpact.Core.Simulator;
 using BetterGenshinImpact.GameTask.AutoFight.Assets;
 using BetterGenshinImpact.GameTask.AutoFight.Config;
 using BetterGenshinImpact.GameTask.AutoFight.Model;
 using BetterGenshinImpact.GameTask.Common;
 using BetterGenshinImpact.GameTask.Common.BgiVision;
+using BetterGenshinImpact.GameTask.Common.Element.Assets;
 using BetterGenshinImpact.View.Drawable;
 using BetterGenshinImpact.GameTask.Model.Area;
 using OpenCvSharp;
@@ -66,6 +68,32 @@ public class SkillCdTrigger : ITaskTrigger
 
     private int _lastSwitchFromSlot = -1;
     private DateTime _lastSwitchTime = DateTime.MinValue;
+    
+    /// <summary>
+    /// 手柄输入监听器
+    /// </summary>
+    private GamepadInputMonitor? _gamepadMonitor;
+    /// <summary>
+    /// 上一次十字键状态（用于检测按键边沿）
+    /// </summary>
+    private bool _prevDPadUp = false;
+    private bool _prevDPadDown = false;
+    private bool _prevDPadLeft = false;
+    private bool _prevDPadRight = false;
+    
+    /// <summary>
+    /// 上一次检测到角色切换的时间，用于防抖
+    /// </summary>
+    private DateTime _lastDetectedSwitchTime = DateTime.MinValue;
+    /// <summary>
+    /// 手柄模式下当前激活的角色索引（1-4），初始为-1表示未知
+    /// </summary>
+    private int _gamepadCurrentActiveIndex = -1;
+    
+    /// <summary>
+    /// 上一次检查手柄状态的时间，用于降低检查频率
+    /// </summary>
+    private DateTime _lastGamepadCheckTime = DateTime.MinValue;
     private DateTime _lastPressIndexTime = DateTime.MinValue; // 换人按键时间
 
 
@@ -84,6 +112,8 @@ public class SkillCdTrigger : ITaskTrigger
     /// </summary>
     public void Init()
     {
+        _logger.LogInformation("🚀 [SkillCD] 冷却提示功能初始化，状态: {Enabled}", IsEnabled ? "已启用" : "已禁用");
+        
         // 清空帧缓存
         _lastImage?.Dispose();
         _lastImage = null;
@@ -110,6 +140,14 @@ public class SkillCdTrigger : ITaskTrigger
         _lastSwitchTime = DateTime.MinValue;
         _lastPressIndexTime = DateTime.MinValue;
         _lastSyncTime = DateTime.MinValue;
+        
+        // 初始化手柄监听器
+        _gamepadMonitor = new GamepadInputMonitor();
+        _prevDPadUp = false;
+        _prevDPadDown = false;
+        _prevDPadLeft = false;
+        _prevDPadRight = false;
+        _gamepadCurrentActiveIndex = -1;
 
         if (!IsEnabled)
         {
@@ -136,17 +174,20 @@ public class SkillCdTrigger : ITaskTrigger
         // CD计时器持续运行
         if (delta >= 0 && delta < 5)
         {
-            for (int i = 0; i < 4; i++)
+            lock (_stateLock)
             {
-                if (_cds[i] > 0)
+                for (int i = 0; i < 4; i++)
                 {
-                    _cds[i] -= delta;
-                    if (_cds[i] < 0) _cds[i] = 0;
+                    if (_cds[i] > 0)
+                    {
+                        _cds[i] -= delta;
+                        if (_cds[i] < 0) _cds[i] = 0;
+                    }
                 }
             }
         }
 
-        // 场景检测（带0.5秒防抖，仅影响UI渲染）
+        // 场景检测：只在主界面或秘境中运行
         bool rawInContext = Bv.IsInMainUi(content.CaptureRectArea) || Bv.IsInDomain(content.CaptureRectArea);
         bool isInContext;
         
@@ -195,34 +236,46 @@ public class SkillCdTrigger : ITaskTrigger
 
         if (!_wasInContext)
         {
+            _logger.LogInformation("🎯 [SkillCD-DEBUG] 检测到 !_wasInContext，准备触发队伍同步");
             // 进入场景时同步队伍信息并检测队伍变化
             _contextEnterTime = now;
             _lastSyncTime = DateTime.MinValue;
             _wasInContext = true;
             _isSyncingTeam = true;
             
+            _logger.LogInformation("✅ [SkillCD] 进入战斗场景，开始同步队伍信息...");
+            
             Task.Run(async () =>
             {
                 // 确保画面加载完成，提高识别成功率
                 await Task.Delay(500);
-                var delaySinceLastPressIndex = (DateTime.Now - _lastPressIndexTime).TotalSeconds;
-                if (delaySinceLastPressIndex < 1.1)
+                
+                // 手柄模式不需要等待换人冷却（因为没有按键监听）
+                bool isGamepadMode = Core.Simulator.Simulation.CurrentInputMode == Core.Simulator.InputMode.XInput;
+                if (!isGamepadMode)
                 {
-                    // 刚按过换人键，人物头像还在读秒，此时yolo识别可能会失败
-                    await Task.Delay(TimeSpan.FromSeconds(1.1 - delaySinceLastPressIndex));
+                    var delaySinceLastPressIndex = (DateTime.Now - _lastPressIndexTime).TotalSeconds;
+                    if (delaySinceLastPressIndex < 1.1)
+                    {
+                        // 刚按过换人键，人物头像还在读秒，此时yolo识别可能会失败
+                        await Task.Delay(TimeSpan.FromSeconds(1.1 - delaySinceLastPressIndex));
+                    }
                 }
                     
                 CombatScenes? scenes = null;
                 try 
                 {
+                    _logger.LogInformation("🔍 [SkillCD] 正在识别队伍配置...");
                     scenes = RunnerContext.Instance.TrySyncCombatScenesSilent();
                     if (scenes != null && scenes.CheckTeamInitialized())
                     {
                         var avatars = scenes.GetAvatars();
+                        _logger.LogInformation("✅ [SkillCD] 识别到 {Count} 个角色", avatars.Count);
                         
                         if (avatars.Count >= 1)
                         {
                             var newTeamNames = avatars.Select(a => a.Name).ToArray();
+                            _logger.LogInformation("📋 [SkillCD] 队伍成员: {Team}", string.Join(", ", newTeamNames));
                             
                             // 检测队伍配置是否变化
                             bool teamChanged = false;
@@ -238,36 +291,41 @@ public class SkillCdTrigger : ITaskTrigger
                             
                             lock (_stateLock)
                             {
+                                // 只更新角色名称，不重置CD值
+                                // CD值由角色切换和OCR识别来管理
                                 if (teamChanged)
                                 {
-                                    bool wasFullTeam = _lastTeamAvatarNames.All(n => !string.IsNullOrEmpty(n));
-                                    bool isNowFullTeam = newTeamNames.Length == 4;
-                                    bool isFullTeam = wasFullTeam && isNowFullTeam;
-                                    if (isFullTeam)
-                                    {
-                                        _logger.LogInformation("[SkillCD] 队伍配置变化: {OldTeam} -> {NewTeam}",
-                                            string.Join(",", _lastTeamAvatarNames),
-                                            string.Join(",", newTeamNames));
-                                    }
-                                    
-                                    for (int i = 0; i < 4; i++)
-                                    {
-                                        _cds[i] = 0;
-                                        _lastSetTime[i] = DateTime.MinValue;
-                                    }
-                                    _lastActiveIndex = -1;
+                                    _logger.LogInformation("[SkillCD] 队伍配置变化: {OldTeam} -> {NewTeam}",
+                                        string.Join(",", _lastTeamAvatarNames),
+                                        string.Join(",", newTeamNames));
                                 }
                                 
-                                SyncAvatarInfo(avatars.ToList());
+                                // 在锁内同步角色信息
+                                for (int i = 0; i < 4; i++)
+                                {
+                                    if (i < avatars.Count)
+                                    {
+                                        _teamAvatarNames[i] = avatars[i].Name;
+                                        _teamIndexRects[i] = avatars[i].IndexRect;
+                                    }
+                                    else
+                                    {
+                                        _teamAvatarNames[i] = string.Empty;
+                                        _teamIndexRects[i] = default;
+                                    }
+                                }
                                 
                                 for (int i = 0; i < 4; i++)
                                 {
                                     _lastTeamAvatarNames[i] = i < newTeamNames.Length ? newTeamNames[i] : string.Empty;
                                 }
                             }
+                            
+                            _logger.LogInformation("✅ [SkillCD] 队伍同步完成，冷却提示功能已激活");
                         }
                         else
                         {
+                            _logger.LogWarning("⚠️ [SkillCD] 未识别到任何角色");
                             lock (_stateLock)
                             {
                                 // 同步失败/无人时清空UI，但保留数据
@@ -281,6 +339,10 @@ public class SkillCdTrigger : ITaskTrigger
                     }
                     else
                     {
+                        var avatarCount = scenes?.AvatarCount ?? 0;
+                        var expectedCount = scenes?.ExpectedTeamAvatarNum ?? 0;
+                        _logger.LogWarning("⚠️ [SkillCD] 队伍识别失败 (scenes={ScenesNull}, initialized={Init}, avatars={AvatarCount}, expected={Expected})", 
+                            scenes == null, scenes?.CheckTeamInitialized() ?? false, avatarCount, expectedCount);
                         lock (_stateLock)
                         {
                             for (int i = 0; i < 4; i++)
@@ -291,18 +353,24 @@ public class SkillCdTrigger : ITaskTrigger
                         }
                     }
                 }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "❌ [SkillCD] 队伍同步异常");
+                }
                 finally
                 {
                     scenes?.Dispose();
                     lock (_stateLock)
                     {
-                        _isSyncingTeam = false; // 无论成功失败，同步结束，允许渲染
+                        _isSyncingTeam = false;
+                        _lastSyncTime = DateTime.Now;
+                        _logger.LogInformation("✅ [SkillCD] 同步任务完成，_isSyncingTeam={Sync}, _lastSyncTime={Time}", _isSyncingTeam, _lastSyncTime);
                     }
                 }
             });
         }
 
-        // 场景切入缓冲期，等待UI稳定
+        // 场景切入缓冲期：避免刚进入场景时误触发
         if ((now - _contextEnterTime).TotalSeconds < 0.5)
         {
             return;
@@ -317,20 +385,150 @@ public class SkillCdTrigger : ITaskTrigger
         if (isEDown && !_prevEKey) _lastEKeyPress = now;
         _prevEKey = isEDown;
 
-        // 监听换人操作 (数字键 1-4)
+        // 监听换人操作
         int pressedIndex = -1;
-        for (int i = 0; i < 4; i++)
+        bool isGamepadMode = Core.Simulator.Simulation.CurrentInputMode == Core.Simulator.InputMode.XInput;
+        
+        if (isGamepadMode && _gamepadMonitor != null)
         {
-            short keyState = User32.GetAsyncKeyState((int)(User32.VK.VK_1 + (byte)i));
-            bool isDown = (keyState & 0x8000) != 0;
-            if (isDown && !_prevKeys[i]) pressedIndex = i;
-            _prevKeys[i] = isDown;
-            _lastPressIndexTime = DateTime.Now;
+            // 性能优化：降低手柄状态检查频率，每100ms检查一次
+            var timeSinceLastCheck = (now - _lastGamepadCheckTime).TotalMilliseconds;
+            if (timeSinceLastCheck < 100)
+            {
+                // 跳过本次检查
+            }
+            else
+            {
+                _lastGamepadCheckTime = now;
+                
+                // 手柄模式：监听十字键上下左右
+                // 角色编号对应：1=上, 2=右, 3=左, 4=下
+                _gamepadMonitor.UpdateState();
+                
+                bool dpadUp = _gamepadMonitor.IsDPadUpPressed();
+                bool dpadDown = _gamepadMonitor.IsDPadDownPressed();
+                bool dpadLeft = _gamepadMonitor.IsDPadLeftPressed();
+                bool dpadRight = _gamepadMonitor.IsDPadRightPressed();
+            
+            // 检测按键边沿（从未按下到按下）
+            if ((dpadUp && !_prevDPadUp) || (dpadDown && !_prevDPadDown) || 
+                (dpadLeft && !_prevDPadLeft) || (dpadRight && !_prevDPadRight))
+            {
+                // 防抖：避免短时间内重复识别
+                var timeSinceLastDetection = (now - _lastDetectedSwitchTime).TotalSeconds;
+                if (timeSinceLastDetection < 0.5)
+                {
+                    _prevDPadUp = dpadUp;
+                    _prevDPadDown = dpadDown;
+                    _prevDPadLeft = dpadLeft;
+                    _prevDPadRight = dpadRight;
+                    return;
+                }
+                
+                // 确定目标角色索引：上=1, 右=2, 左=3, 下=4
+                int targetIndex = dpadUp ? 1 : dpadRight ? 2 : dpadLeft ? 3 : 4;
+                string direction = dpadUp ? "上(角色1)" : dpadRight ? "右(角色2)" : dpadLeft ? "左(角色3)" : "下(角色4)";
+                
+                // 首次检测：使用图像识别确定当前角色
+                if (_gamepadCurrentActiveIndex <= 0)
+                {
+                    if (_lastImage != null)
+                    {
+                        _logger.LogInformation("🔍 [SkillCD-Gamepad] 首次检测开始，目标角色={Target}", targetIndex);
+                        
+                        int detectedIndex = IdentifyActiveIndex(_lastImage, new AvatarActiveCheckContext());
+                        _logger.LogInformation("🔍 [SkillCD-Gamepad] 图像识别结果: detectedIndex={Detected}", detectedIndex);
+                        
+                        if (detectedIndex > 0)
+                        {
+                            _gamepadCurrentActiveIndex = detectedIndex;
+                            _logger.LogInformation("✅ [SkillCD-Gamepad] 首次检测成功，图像识别当前角色={Current}，目标角色={Target}", 
+                                detectedIndex, targetIndex);
+                        }
+                        else
+                        {
+                            _logger.LogWarning("⚠️ [SkillCD-Gamepad] 首次检测失败，图像识别返回{Result}，无法确定当前角色", detectedIndex);
+                            // 图像识别失败，无法确定当前角色，跳过本次
+                            _prevDPadUp = dpadUp;
+                            _prevDPadDown = dpadDown;
+                            _prevDPadLeft = dpadLeft;
+                            _prevDPadRight = dpadRight;
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogWarning("⚠️ [SkillCD-Gamepad] 首次检测失败，_lastImage为null");
+                        _prevDPadUp = dpadUp;
+                        _prevDPadDown = dpadDown;
+                        _prevDPadLeft = dpadLeft;
+                        _prevDPadRight = dpadRight;
+                        return;
+                    }
+                }
+                
+                // 如果当前激活角色已知，且不等于目标角色，说明要切换了
+                // 此时OCR识别的是当前角色的CD
+                if (_gamepadCurrentActiveIndex > 0 && _gamepadCurrentActiveIndex != targetIndex)
+                {
+                    if (_lastImage != null)
+                    {
+                        double ocrVal = RecognizeSkillCd(_lastImage);
+                        
+                        if (ocrVal > 0)
+                        {
+                            int slot = _gamepadCurrentActiveIndex - 1;
+                            lock (_stateLock)
+                            {
+                                _cds[slot] = ocrVal;
+                                _lastSetTime[slot] = DateTime.Now;
+                            }
+                            _logger.LogInformation("✅ [SkillCD-Gamepad] 角色{Current}→{Target}，记录角色{Current}的CD: {Cd:F1}s", 
+                                _gamepadCurrentActiveIndex, targetIndex, _gamepadCurrentActiveIndex, ocrVal);
+                            
+                            // OCR成功，更新当前角色索引
+                            _gamepadCurrentActiveIndex = targetIndex;
+                        }
+                        else
+                        {
+                            // OCR识别失败（可能是战技持续期间），不记录CD，也不更新当前角色索引
+                            // 保持原有的_gamepadCurrentActiveIndex，等待下次成功识别
+                            _logger.LogWarning("⚠️ [SkillCD-Gamepad] 角色{Current}→{Target}，OCR未识别到CD，保持当前角色索引不变", 
+                                _gamepadCurrentActiveIndex, targetIndex);
+                        }
+                    }
+                }
+                else if (_gamepadCurrentActiveIndex == targetIndex)
+                {
+                    // 连续按相同按键，防抖跳过
+                    _logger.LogDebug("🔄 [SkillCD-Gamepad] 连续按相同按键（角色{Target}），跳过", targetIndex);
+                }
+                _lastDetectedSwitchTime = now;
+            }
+            
+                _prevDPadUp = dpadUp;
+                _prevDPadDown = dpadDown;
+                _prevDPadLeft = dpadLeft;
+                _prevDPadRight = dpadRight;
+            }
+        }
+        else if (!isGamepadMode)
+        {
+            // 键鼠模式：监听数字键 1-4
+            for (int i = 0; i < 4; i++)
+            {
+                short keyState = User32.GetAsyncKeyState((int)(User32.VK.VK_1 + (byte)i));
+                bool isDown = (keyState & 0x8000) != 0;
+                if (isDown && !_prevKeys[i]) pressedIndex = i;
+                _prevKeys[i] = isDown;
+                _lastPressIndexTime = DateTime.Now;
+            }
         }
 
         if (_lastImage != null)
         {
-            if (pressedIndex != -1)
+            // 键鼠模式：数字键切换角色
+            if (!isGamepadMode && pressedIndex != -1)
             {
                 ImageRegion frameToUse = _penultimateImage ?? _lastImage;
                 if (frameToUse != null)
@@ -339,7 +537,9 @@ public class SkillCdTrigger : ITaskTrigger
                 }
             }
 
-            if (_prevEKey && TaskContext.Instance().Config.SkillCdConfig.TriggerOnSkillUse)
+            // 手柄模式：已改为在按键时直接OCR识别，不再需要后续的切换检测
+            // 键鼠模式：E键触发时也使用图像识别
+            if (!isGamepadMode && _prevEKey && TaskContext.Instance().Config.SkillCdConfig.TriggerOnSkillUse)
             {
                 ImageRegion frameToUse = _penultimateImage ?? _lastImage;
                 if (frameToUse != null)
@@ -383,9 +583,6 @@ public class SkillCdTrigger : ITaskTrigger
         }
     }
 
-    /// <summary>
-    /// 处理按键切换角色时的CD记录
-    /// </summary>
     private void HandleActionTrigger(ImageRegion frame, int pressedTarget)
     {
         int activeIdx = IdentifyActiveIndex(frame, new AvatarActiveCheckContext());
@@ -393,52 +590,83 @@ public class SkillCdTrigger : ITaskTrigger
 
         int slot = activeIdx - 1;
         
-        // 记录被切走角色的CD
         if (slot != pressedTarget)
         {
             double ocrVal = RecognizeSkillCd(frame);
-            if (ocrVal > 0)
+            
+            lock (_stateLock)
             {
-                _cds[slot] = ocrVal;
-                _lastSetTime[slot] = DateTime.Now;
-                
-                // 记录切人保护
-                _lastSwitchFromSlot = slot;
-                _lastSwitchTime = DateTime.Now;
-            }
-            else
-            {
-                // OCR识别失败，尝试兜底
-                bool justUsedE = (DateTime.Now - _lastEKeyPress).TotalSeconds < 1.1;
-                bool isVisualReady = Bv.IsSkillReady(frame, activeIdx, false);
-
-                if (isVisualReady)
+                if (ocrVal > 0)
                 {
-                    if (justUsedE)
-                    {
-                        ApplyFallbackCd(slot);
-                    }
-                    else if (_cds[slot] > 0)
-                    {
-                         // 保留原CD
-                    }
-                    else
-                    {
-                        _cds[slot] = 0;
-                    }
+                    _cds[slot] = ocrVal;
+                    _lastSetTime[slot] = DateTime.Now;
+                    
+                    _lastSwitchFromSlot = slot;
+                    _lastSwitchTime = DateTime.Now;
                 }
                 else
                 {
-                    if (justUsedE)
+                    bool justUsedE = (DateTime.Now - _lastEKeyPress).TotalSeconds < 1.1;
+                    bool isVisualReady = Bv.IsSkillReady(frame, activeIdx, false);
+
+                    if (isVisualReady)
                     {
-                        ApplyFallbackCd(slot);
+                        if (justUsedE)
+                        {
+                            ApplyFallbackCd(slot);
+                        }
+                        else if (_cds[slot] > 0)
+                        {
+                        }
+                        else
+                        {
+                            _cds[slot] = 0;
+                        }
+                    }
+                    else
+                    {
+                        if (justUsedE)
+                        {
+                            ApplyFallbackCd(slot);
+                        }
                     }
                 }
             }
         }
         
-        // 更新当前激活角色索引（不清零CD，让计时器持续运行）
         _lastActiveIndex = pressedTarget + 1;
+    }
+
+    private void HandleGamepadSwitch(ImageRegion frame, int fromIndex, int toIndex)
+    {
+        int fromSlot = fromIndex - 1;
+        
+        double ocrVal = RecognizeSkillCd(frame);
+        
+        lock (_stateLock)
+        {
+            if (ocrVal > 0)
+            {
+                _cds[fromSlot] = ocrVal;
+                _lastSetTime[fromSlot] = DateTime.Now;
+                _logger.LogInformation("[SkillCD-Gamepad] 角色切换 {From} -> {To}, 记录旧角色CD: {Cd:F1}s", fromIndex, toIndex, ocrVal);
+            }
+            else
+            {
+                // OCR返回0可能是：1.角色没用过E技能 2.OCR识别失败
+                if (_cds[fromSlot] > 0)
+                {
+                    _logger.LogDebug("[SkillCD-Gamepad] 角色切换 {From} -> {To}, OCR未识别到CD，保留现有CD: {Cd:F1}s", fromIndex, toIndex, _cds[fromSlot]);
+                }
+                else
+                {
+                    _logger.LogDebug("[SkillCD-Gamepad] 角色切换 {From} -> {To}, OCR未识别到CD，角色可能未使用过E技能", fromIndex, toIndex);
+                }
+            }
+        }
+        
+        _lastSwitchFromSlot = fromSlot;
+        _lastSwitchTime = DateTime.Now;
     }
 
     /// <summary>
@@ -551,38 +779,108 @@ public class SkillCdTrigger : ITaskTrigger
     }
     private int IdentifyActiveIndex(ImageRegion region, AvatarActiveCheckContext context)
     {
-        var validRects = _teamIndexRects.Any(r => r != default)
-            ? _teamIndexRects.Where(r => r != default).ToArray()
-            : AutoFightAssets.Instance.AvatarIndexRectList.ToArray();
+        bool isGamepadMode = Core.Simulator.Simulation.CurrentInputMode == Core.Simulator.InputMode.XInput;
+        
+        if (isGamepadMode)
+        {
+            // 手柄模式：只使用箭头检测，使用专用的识别区域
+            var rectArray = AutoFightAssets.Instance.AvatarIndexRectListGamepad.ToArray();
+            var arrowRo = AutoFightAssets.Instance.CurrentAvatarThresholdGamepadForSkillCd;
+            
+            var curr = region.Find(arrowRo);
+            if (curr.IsEmpty())
+            {
+                return -1;
+            }
 
-        return PartyAvatarSideIndexHelper.GetAvatarIndexIsActiveWithContext(region, validRects, context);
+            for (int i = 0; i < rectArray.Length; i++)
+            {
+                bool intersects = IsIntersecting(curr.Y, curr.Height, rectArray[i].Y, rectArray[i].Height);
+                if (intersects)
+                {
+                    return i + 1;
+                }
+            }
+
+            return -1;
+        }
+        else
+        {
+            // 键鼠模式：使用完整的检测逻辑（颜色+箭头+图像差异）
+            var rectArray = AutoFightAssets.Instance.AvatarIndexRectList.ToArray();
+            int result = PartyAvatarSideIndexHelper.GetAvatarIndexIsActiveWithContext(region, rectArray, context);
+            return result;
+        }
+    }
+    
+    private static bool IsIntersecting(int y1, int height1, int y2, int height2)
+    {
+        int bottom1 = y1 + height1;
+        int bottom2 = y2 + height2;
+        return !(bottom1 < y2 || bottom2 < y1);
     }
 
     private double RecognizeSkillCd(ImageRegion image)
     {
         try
         {
-            var eCdRect = AutoFightAssets.Instance.ECooldownRect;
+            var eCdRect = Core.Simulator.Simulation.CurrentInputMode == Core.Simulator.InputMode.XInput
+                ? AutoFightAssets.Instance.ECooldownRectGamepad
+                : AutoFightAssets.Instance.ECooldownRect;
+            
             using var crop = image.DeriveCrop(eCdRect);
             var roi = crop.SrcMat;
+            
+            // 方法1：白色文字过滤（降低阈值，提取更多接近白色的像素）
             using var whiteMask = new Mat();
-            Cv2.InRange(roi, new Scalar(230, 230, 230), new Scalar(255, 255, 255), whiteMask);
+            Cv2.InRange(roi, new Scalar(180, 180, 180), new Scalar(255, 255, 255), whiteMask);
+            
             var text = OcrFactory.Paddle.OcrWithoutDetector(whiteMask);
-            if (string.IsNullOrWhiteSpace(text)) return 0;
-            var match = Regex.Match(text, @"\d+(\.\d+)?");
-            if (match.Success && double.TryParse(match.Value, out var val))
+            _logger.LogInformation("[SkillCD] OCR识别文本: \"{Text}\"", text ?? "(null)");
+            
+            if (!string.IsNullOrWhiteSpace(text))
             {
-                // 减去两帧的时间作为补偿
-                int intervalMs = TaskContext.Instance().Config.TriggerInterval;
-                double compensation = (intervalMs * 2) / 1000.0;
-                val -= compensation;
+                var match = Regex.Match(text, @"\d+(\.\d+)?");
+                if (match.Success && double.TryParse(match.Value, out var val))
+                {
+                    int intervalMs = TaskContext.Instance().Config.TriggerInterval;
+                    double compensation = (intervalMs * 2) / 1000.0;
+                    val -= compensation;
 
-                return (val > 0 && val < 60) ? val : 0;
+                    _logger.LogInformation("[SkillCD] OCR识别结果: {Val:F1}", val);
+                    return (val > 0 && val < 60) ? val : 0;
+                }
+            }
+            
+            // 方法2：白色过滤失败，尝试二值化处理（只保留最亮的像素）
+            _logger.LogDebug("[SkillCD] 白色过滤OCR失败，尝试二值化处理");
+            using var grayRoi = new Mat();
+            Cv2.CvtColor(roi, grayRoi, ColorConversionCodes.BGR2GRAY);
+            
+            // 使用OTSU自动阈值二值化，或者使用固定阈值200
+            using var binaryRoi = new Mat();
+            Cv2.Threshold(grayRoi, binaryRoi, 200, 255, ThresholdTypes.Binary);
+            
+            var text2 = OcrFactory.Paddle.OcrWithoutDetector(binaryRoi);
+            _logger.LogInformation("[SkillCD] 二值化OCR识别文本: \"{Text}\"", text2 ?? "(null)");
+            
+            if (!string.IsNullOrWhiteSpace(text2))
+            {
+                var match = Regex.Match(text2, @"\d+(\.\d+)?");
+                if (match.Success && double.TryParse(match.Value, out var val))
+                {
+                    int intervalMs = TaskContext.Instance().Config.TriggerInterval;
+                    double compensation = (intervalMs * 2) / 1000.0;
+                    val -= compensation;
+
+                    _logger.LogInformation("[SkillCD] 二值化OCR识别结果: {Val:F1}", val);
+                    return (val > 0 && val < 60) ? val : 0;
+                }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[SkillCD] OCR识别CD失败");
+            _logger.LogError(ex, "[SkillCD] OCR识别异常");
         }
         return 0;
     }
@@ -593,67 +891,78 @@ public class SkillCdTrigger : ITaskTrigger
     private void UpdateOverlay()
     {
         var drawContent = VisionContext.Instance().DrawContent;
-        var sideRects = AutoFightAssets.Instance.AvatarSideIconRectList;
         var config = TaskContext.Instance().Config.SkillCdConfig;
         
-        if (sideRects == null || sideRects.Count < 4)
+        if (_isSyncingTeam)
         {
-            drawContent.PutOrRemoveTextList("SkillCdText", null);
+            _logger.LogDebug("[SkillCD] UpdateOverlay: 正在同步队伍，跳过");
             return;
         }
 
         var systemInfo = TaskContext.Instance().SystemInfo;
         double factor = (double)systemInfo.GameScreenSize.Width / systemInfo.ScaleMax1080PCaptureRect.Width;
         
-        // 使用配置中的坐标（保留一位小数）
+        bool isGamepadMode = Core.Simulator.Simulation.CurrentInputMode == Core.Simulator.InputMode.XInput;
+        
         double userPX = Math.Round(config.PX, 1);
         double userPY = Math.Round(config.PY, 1);
         double userGap = Math.Round(config.Gap, 1);
+        
+        // 手柄模式：自动调整遮罩位置
+        if (isGamepadMode)
+        {
+            // 手柄模式下角色位置下移约70px，间距缩小为75px
+            // 向左移动30px避免遮挡大招图标
+            userPX -= 30.0;
+            userPY += 70.0;
+            userGap = 75.0;
+        }
 
         double basePx = userPX * factor;
         double basePy = userPY * factor;
         double intervalY = userGap * factor;
 
         var textList = new List<TextDrawable>();
+        string[] avatarNames;
+        double[] cds;
         
-        if (_isSyncingTeam)
+        lock (_stateLock)
         {
-            drawContent.PutOrRemoveTextList("SkillCdText", null);
-            return;
-        }
-
-        // 检查是否有足够的角色信息（必须恰好4人）
-        int validAvatarCount = _teamAvatarNames.Count(n => !string.IsNullOrEmpty(n));
-        // _logger.LogDebug("[SkillCD] UpdateOverlay: 有效角色数量={Count}, Names={Names}", validAvatarCount, string.Join(",", _teamAvatarNames));
-        
-        if (validAvatarCount != 4)
-        {
-            // 不是4人，确保清空
-            if (drawContent.TextList.ContainsKey("SkillCdText"))
-            {
-               drawContent.PutOrRemoveTextList("SkillCdText", null);
-            }
-            return;
+            avatarNames = (string[])_teamAvatarNames.Clone();
+            cds = (double[])_cds.Clone();
         }
         
-        for (int i = 0; i < 4; i++)
+        for (int slot = 0; slot < 4; slot++)
         {
-            if (!string.IsNullOrEmpty(_teamAvatarNames[i]))
+            if (!string.IsNullOrEmpty(avatarNames[slot]))
             {
-                // 如果启用了"冷却为0时隐藏"，且CD为0，则跳过
-                if (config.HideWhenZero && _cds[i] <= 0)
+                if (config.HideWhenZero && cds[slot] <= 0)
                 {
                     continue;
                 }
 
                 var px = basePx;
-                var py = basePy + intervalY * i;
+                var py = basePy + intervalY * slot;
 
-                textList.Add(new TextDrawable(_cds[i].ToString("F1"), new Point(px, py)));
+                textList.Add(new TextDrawable(cds[slot].ToString("F1"), new Point(px, py)));
+            }
+            else
+            {
+                if (cds[slot] > 0)
+                {
+                    _logger.LogWarning("[SkillCD] 角色{Slot}名称为空但CD={Cd:F1}s > 0，无法显示遮罩", 
+                        slot + 1, cds[slot]);
+                }
             }
         }
-
-        if (textList.Count == 0) drawContent.PutOrRemoveTextList("SkillCdText", null);
-        else drawContent.PutOrRemoveTextList("SkillCdText", textList);
+        
+        if (textList.Count == 0)
+        {
+            drawContent.PutOrRemoveTextList("SkillCdText", null);
+        }
+        else
+        {
+            drawContent.PutOrRemoveTextList("SkillCdText", textList);
+        }
     }
 }
