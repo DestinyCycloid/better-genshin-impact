@@ -28,11 +28,16 @@
                       Margin="0,0,0,8"
                       FontTypography="BodyStrong"
                       Text="快捷键设置" />
-        <ui:TextBlock Grid.Row="1"
-                      Margin="0,0,0,8"
-                      Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
-                      Text="全局热键：只支持组合键和功能键，软件启动直接生效。键鼠监听：支持任意键盘单键、鼠标侧键，功能启动后才生效（推荐）。点击类型按钮可以切换快捷键类型。其中存在长按需求的功能不能使用全局热键。"
-                      TextWrapping="Wrap" />
+        <StackPanel Grid.Row="1" Margin="0,0,0,8">
+            <ui:TextBlock Margin="0,0,0,4"
+                          Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                          Text="全局热键：只支持组合键和功能键，软件启动直接生效。键鼠监听：支持任意键盘单键、鼠标侧键，功能启动后才生效（推荐）。手柄监听：支持手柄按键和组合键，功能启动后才生效。点击类型按钮可以切换快捷键类型。其中存在长按需求的功能不能使用全局热键。"
+                          TextWrapping="Wrap" />
+            <ui:TextBlock Margin="0,4,0,0"
+                          Foreground="{ui:ThemeResource AccentTextFillColorSecondaryBrush}"
+                          Text="手柄模式使用说明：点击输入框后，按下手柄按键即可设置。单键：按住按键超过0.5秒。组合键：先按修饰键，再按主键（如 LB+A）。清空：按 Delete/Backspace/Escape 键。"
+                          TextWrapping="Wrap" />
+        </StackPanel>
 
         <!--<ItemsControl Grid.Row="2" ItemsSource="{Binding HotKeySettingModels}">
             <ItemsControl.ItemTemplate>

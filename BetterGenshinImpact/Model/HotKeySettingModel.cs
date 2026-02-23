@@ -1,4 +1,5 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+﻿using BetterGenshinImpact.Core.Simulator;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Fischless.HotkeyCapture;
 using System;
@@ -60,6 +61,11 @@ public partial class HotKeySettingModel : ObservableObject
     /// 鼠标监听配置
     /// </summary>
     public MouseHook? MouseMonitorHook { get; set; }
+    
+    /// <summary>
+    /// 手柄监听配置
+    /// </summary>
+    public GamepadHook? GamepadMonitorHook { get; set; }
 
     public HotKeySettingModel(string functionName)
     {
@@ -76,7 +82,8 @@ public partial class HotKeySettingModel : ObservableObject
         HotKeyTypeName = HotKeyType.ToChineseName();
         OnKeyPressAction = onKeyPressAction;
         IsHold = isHold;
-        SwitchHotkeyTypeEnabled = !isHold;
+        // 按住模式可以在键鼠监听和手柄监听之间切换，但不能使用全局热键
+        SwitchHotkeyTypeEnabled = true;
     }
 
     public void RegisterHotKey()
@@ -99,6 +106,53 @@ public partial class HotKeySettingModel : ObservableObject
                     GlobalRegisterHook.KeyPressed += OnKeyPressed;
                 }
                 GlobalRegisterHook.RegisterHotKey(hotkey.ModifierKey, hotkey.Key);
+            }
+            else if (HotKeyType == HotKeyTypeEnum.GamepadMonitor)
+            {
+                // 手柄监听模式
+                GamepadMonitorHook?.Dispose();
+                GamepadMonitorHook = new GamepadHook
+                {
+                    IsHold = IsHold
+                };
+                
+                if (OnKeyPressAction != null)
+                {
+                    GamepadMonitorHook.GamepadPressed -= OnKeyPressed;
+                    GamepadMonitorHook.GamepadPressed += OnKeyPressed;
+                }
+                if (OnKeyDownAction != null)
+                {
+                    GamepadMonitorHook.GamepadDownEvent -= OnKeyDown;
+                    GamepadMonitorHook.GamepadDownEvent += OnKeyDown;
+                }
+                if (OnKeyUpAction != null)
+                {
+                    GamepadMonitorHook.GamepadUpEvent -= OnKeyUp;
+                    GamepadMonitorHook.GamepadUpEvent += OnKeyUp;
+                }
+                
+                // 从HotKey字符串解析手柄按钮（支持组合键，如 "LB+A"）
+                var hotkeyStr = HotKey.ToString();
+                if (hotkeyStr.Contains("+"))
+                {
+                    // 组合键：修饰键 + 主键
+                    var parts = hotkeyStr.Split('+');
+                    if (parts.Length == 2 && 
+                        Enum.TryParse<GamepadButton>(parts[0].Trim(), out var modifier) &&
+                        Enum.TryParse<GamepadButton>(parts[1].Trim(), out var button))
+                    {
+                        GamepadMonitorHook.RegisterHotKey(modifier, button);
+                    }
+                }
+                else
+                {
+                    // 单键
+                    if (Enum.TryParse<GamepadButton>(hotkeyStr, out var button))
+                    {
+                        GamepadMonitorHook.RegisterHotKey(button);
+                    }
+                }
             }
             else
             {
@@ -187,12 +241,33 @@ public partial class HotKeySettingModel : ObservableObject
         GlobalRegisterHook?.Dispose();
         MouseMonitorHook?.Dispose();
         KeyboardMonitorHook?.Dispose();
+        GamepadMonitorHook?.Dispose();
     }
 
     [RelayCommand]
     public void OnSwitchHotKeyType()
     {
-        HotKeyType = HotKeyType == HotKeyTypeEnum.GlobalRegister ? HotKeyTypeEnum.KeyboardMonitor : HotKeyTypeEnum.GlobalRegister;
+        if (IsHold)
+        {
+            // 按住模式：只在键鼠监听和手柄监听之间切换（不支持全局热键）
+            HotKeyType = HotKeyType switch
+            {
+                HotKeyTypeEnum.KeyboardMonitor => HotKeyTypeEnum.GamepadMonitor,
+                HotKeyTypeEnum.GamepadMonitor => HotKeyTypeEnum.KeyboardMonitor,
+                _ => HotKeyTypeEnum.KeyboardMonitor // 默认键鼠监听
+            };
+        }
+        else
+        {
+            // 非按住模式：三种类型循环切换
+            HotKeyType = HotKeyType switch
+            {
+                HotKeyTypeEnum.GlobalRegister => HotKeyTypeEnum.KeyboardMonitor,
+                HotKeyTypeEnum.KeyboardMonitor => HotKeyTypeEnum.GamepadMonitor,
+                HotKeyTypeEnum.GamepadMonitor => HotKeyTypeEnum.GlobalRegister,
+                _ => HotKeyTypeEnum.GlobalRegister
+            };
+        }
         HotKeyTypeName = HotKeyType.ToChineseName();
     }
 }

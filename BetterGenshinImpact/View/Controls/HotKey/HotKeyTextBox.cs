@@ -1,4 +1,10 @@
-﻿using BetterGenshinImpact.Model;
+﻿using BetterGenshinImpact.Core.Simulator;
+using BetterGenshinImpact.Model;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
@@ -8,13 +14,31 @@ namespace BetterGenshinImpact.View.Controls.HotKey;
 
 public class HotKeyTextBox : TextBox
 {
+    private GamepadInputMonitor? _gamepadMonitor;
+    private CancellationTokenSource? _gamepadCts;
+    private Task? _gamepadMonitorTask;
+    private bool _isMonitoringGamepad = false;
+    
     public static readonly DependencyProperty HotkeyTypeNameProperty = DependencyProperty.Register(
         nameof(HotKeyTypeName),
         typeof(string),
         typeof(HotKeyTextBox),
         new FrameworkPropertyMetadata(
             default(string),
-            FrameworkPropertyMetadataOptions.BindsTwoWayByDefault
+            FrameworkPropertyMetadataOptions.BindsTwoWayByDefault,
+            (sender, _) =>
+            {
+                var control = (HotKeyTextBox)sender;
+                // 当切换到手柄监听模式时，启动手柄监听
+                if (control.HotKeyTypeName == HotKeyTypeEnum.GamepadMonitor.ToChineseName())
+                {
+                    control.StartGamepadMonitoring();
+                }
+                else
+                {
+                    control.StopGamepadMonitoring();
+                }
+            }
         )
     );
 
@@ -58,6 +82,149 @@ public class HotKeyTextBox : TextBox
             ContextMenu.Visibility = Visibility.Collapsed;
 
         Text = Hotkey.ToString();
+        
+        // 当控件获得焦点时，如果是手柄模式，启动监听
+        GotFocus += (s, e) =>
+        {
+            if (HotKeyTypeName == HotKeyTypeEnum.GamepadMonitor.ToChineseName())
+            {
+                StartGamepadMonitoring();
+            }
+        };
+        
+        // 当控件失去焦点时，停止手柄监听
+        LostFocus += (s, e) =>
+        {
+            StopGamepadMonitoring();
+        };
+        
+        // 当控件卸载时，停止手柄监听
+        Unloaded += (s, e) =>
+        {
+            StopGamepadMonitoring();
+        };
+    }
+    
+    private void StartGamepadMonitoring()
+    {
+        if (_isMonitoringGamepad)
+            return;
+            
+        _isMonitoringGamepad = true;
+        _gamepadMonitor = new GamepadInputMonitor();
+        _gamepadCts = new CancellationTokenSource();
+        
+        _gamepadMonitorTask = Task.Run(async () =>
+        {
+            List<GamepadButton>? lastPressedButtons = null;
+            DateTime firstPressTime = DateTime.MinValue;
+            bool isWaitingForRelease = false;
+            
+            while (!_gamepadCts.Token.IsCancellationRequested)
+            {
+                try
+                {
+                    _gamepadMonitor.UpdateState();
+                    
+                    if (!_gamepadMonitor.IsConnected)
+                    {
+                        await Task.Delay(500, _gamepadCts.Token);
+                        continue;
+                    }
+                    
+                    var pressedButtons = _gamepadMonitor.GetAllPressedButtons();
+                    
+                    if (isWaitingForRelease)
+                    {
+                        // 等待所有按键松开
+                        if (pressedButtons.Count == 0)
+                        {
+                            isWaitingForRelease = false;
+                            lastPressedButtons = null;
+                        }
+                    }
+                    else if (pressedButtons.Count > 0)
+                    {
+                        // 检查是否是新的按键组合
+                        if (lastPressedButtons == null || lastPressedButtons.Count == 0)
+                        {
+                            // 第一次按下按键，开始计时
+                            lastPressedButtons = new List<GamepadButton>(pressedButtons);
+                            firstPressTime = DateTime.Now;
+                        }
+                        else
+                        {
+                            // 检查按键是否增加（允许组合键）
+                            bool hasNewButtons = pressedButtons.Count > lastPressedButtons.Count;
+                            bool allPreviousStillPressed = lastPressedButtons.All(b => pressedButtons.Contains(b));
+                            
+                            if (hasNewButtons && allPreviousStillPressed)
+                            {
+                                // 按键增加（组合键），更新按键列表但不重置计时器
+                                lastPressedButtons = new List<GamepadButton>(pressedButtons);
+                            }
+                            else if (!allPreviousStillPressed || pressedButtons.Count < lastPressedButtons.Count)
+                            {
+                                // 按键减少或完全不同，重新开始
+                                lastPressedButtons = new List<GamepadButton>(pressedButtons);
+                                firstPressTime = DateTime.Now;
+                            }
+                            
+                            // 检查是否超过500ms
+                            if ((DateTime.Now - firstPressTime).TotalMilliseconds > 500)
+                            {
+                                // 在UI线程更新
+                                Dispatcher.Invoke(() =>
+                                {
+                                    if (pressedButtons.Count == 1)
+                                    {
+                                        // 单键
+                                        Hotkey = Model.HotKey.FromString(pressedButtons[0].ToString());
+                                    }
+                                    else if (pressedButtons.Count >= 2)
+                                    {
+                                        // 组合键（取前两个）
+                                        Hotkey = Model.HotKey.FromString($"{pressedButtons[0]}+{pressedButtons[1]}");
+                                    }
+                                });
+                                
+                                // 等待按键松开
+                                isWaitingForRelease = true;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // 所有按键都松开了
+                        lastPressedButtons = null;
+                    }
+                    
+                    await Task.Delay(50, _gamepadCts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch
+                {
+                    // 忽略异常
+                }
+            }
+        }, _gamepadCts.Token);
+    }
+    
+    private void StopGamepadMonitoring()
+    {
+        if (!_isMonitoringGamepad)
+            return;
+            
+        _isMonitoringGamepad = false;
+        _gamepadCts?.Cancel();
+        _gamepadMonitorTask?.Wait(100);
+        _gamepadCts?.Dispose();
+        _gamepadCts = null;
+        _gamepadMonitorTask = null;
+        _gamepadMonitor = null;
     }
 
     private static bool HasKeyChar(Key key) =>
@@ -97,6 +264,19 @@ public class HotKeyTextBox : TextBox
 
     protected override void OnPreviewKeyDown(KeyEventArgs args)
     {
+        // 手柄模式下不处理键盘输入
+        if (HotKeyTypeName == HotKeyTypeEnum.GamepadMonitor.ToChineseName())
+        {
+            args.Handled = true;
+            
+            // Delete/Backspace/Escape 清空快捷键
+            if (args.Key is Key.Delete or Key.Back or Key.Escape)
+            {
+                Hotkey = Model.HotKey.None;
+            }
+            return;
+        }
+        
         args.Handled = true;
 
         // Get modifiers and key data
@@ -156,6 +336,12 @@ public class HotKeyTextBox : TextBox
     /// <param name="args"></param>
     protected override void OnPreviewMouseDown(MouseButtonEventArgs args)
     {
+        // 手柄模式下不处理鼠标输入
+        if (HotKeyTypeName == HotKeyTypeEnum.GamepadMonitor.ToChineseName())
+        {
+            return;
+        }
+        
         if (args.ChangedButton is MouseButton.XButton1 or MouseButton.XButton2)
         {
             if (HotKeyTypeName == HotKeyTypeEnum.GlobalRegister.ToChineseName())

@@ -1,7 +1,9 @@
 {
     "hotKeyConfig":  {
-                         "oneKeyFightHotkey":  "F9",
-                         "turnAroundToggleHotkey":  "F10"
+                         "oneKeyFightHotkey":  "LB+X",
+                         "oneKeyFightHotkeyType":  "GamepadMonitor",
+                         "turnAroundToggleHotkey":  "LB+A",
+                         "turnAroundToggleHotkeyType":  "GamepadMonitor"
                      },
     "macroConfig":  {
                         "combatMacroEnabled":  true,

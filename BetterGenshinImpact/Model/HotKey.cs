@@ -4,10 +4,16 @@ using System.Windows.Input;
 
 namespace BetterGenshinImpact.Model;
 
-public readonly partial record struct HotKey(Key Key, ModifierKeys Modifiers = ModifierKeys.None, MouseButton MouseButton = MouseButton.Left)
+public readonly partial record struct HotKey(Key Key, ModifierKeys Modifiers = ModifierKeys.None, MouseButton MouseButton = MouseButton.Left, string RawString = "")
 {
     public override string ToString()
     {
+        // 如果有原始字符串（手柄按键），直接返回
+        if (!string.IsNullOrEmpty(RawString))
+        {
+            return RawString;
+        }
+        
         if (Key == Key.None && Modifiers == ModifierKeys.None && MouseButton == MouseButton.Left)
         {
             return "< None >";
@@ -34,7 +40,7 @@ public readonly partial record struct HotKey(Key Key, ModifierKeys Modifiers = M
         return buffer.ToString();
     }
 
-    public bool IsEmpty => Key == Key.None && Modifiers == ModifierKeys.None && MouseButton == MouseButton.Left;
+    public bool IsEmpty => Key == Key.None && Modifiers == ModifierKeys.None && MouseButton == MouseButton.Left && string.IsNullOrEmpty(RawString);
 
     public static HotKey FromString(string str)
     {
@@ -54,6 +60,14 @@ public readonly partial record struct HotKey(Key Key, ModifierKeys Modifiers = M
         if (str == MouseButton.XButton2.ToString())
         {
             return new HotKey(key, modifiers, MouseButton.XButton2);
+        }
+
+        // 检查是否是手柄按键（包含手柄按键名称）
+        // 手柄按键格式：单键如 "A", "LB"，组合键如 "LB+A"
+        if (IsGamepadButton(str))
+        {
+            // 手柄按键存储原始字符串
+            return new HotKey(key, modifiers, mouseButton, str);
         }
 
         var parts = str.Split('+');
@@ -82,6 +96,39 @@ public readonly partial record struct HotKey(Key Key, ModifierKeys Modifiers = M
     public static bool IsMouseButton(string name)
     {
         return name == MouseButton.XButton1.ToString() || name == MouseButton.XButton2.ToString();
+    }
+    
+    /// <summary>
+    /// 检查字符串是否包含手柄按键名称
+    /// </summary>
+    private static bool IsGamepadButton(string str)
+    {
+        if (string.IsNullOrWhiteSpace(str))
+            return false;
+            
+        // 手柄按键名称列表
+        string[] gamepadButtons = 
+        {
+            "A", "B", "X", "Y",
+            "LB", "RB", "LT", "RT",
+            "Start", "Back",
+            "LeftThumb", "RightThumb",
+            "DPadUp", "DPadDown", "DPadLeft", "DPadRight"
+        };
+        
+        // 检查单键或组合键中的任意部分
+        var parts = str.Split('+');
+        foreach (var part in parts)
+        {
+            var trimmed = part.Trim();
+            foreach (var button in gamepadButtons)
+            {
+                if (trimmed == button)
+                    return true;
+            }
+        }
+        
+        return false;
     }
 }
 
