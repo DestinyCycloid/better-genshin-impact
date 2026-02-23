@@ -150,12 +150,11 @@ public class PathExecutor
             return;
         }
 
-        // 临时禁用队伍验证，避免角色识别失败导致任务中断
-        // if (!await ValidateGameWithTask(task))
-        // {
-        //     return;
-        // }
-        Logger.LogWarning("已禁用队伍验证，跳过角色识别检查");
+        // 队伍验证：检查角色配置是否满足任务要求
+        if (!await ValidateGameWithTask(task))
+        {
+            return;
+        }
 
         InitializePathing(task);
         // ת���������͵�ָ�·��
@@ -433,17 +432,53 @@ public class PathExecutor
     }
 
     /// <summary>
-    /// У��
+    /// 队伍验证
     /// </summary>
     /// <param name="task"></param>
     /// <returns></returns>
     private async Task<bool> ValidateGameWithTask(PathingTask task)
     {
-        _combatScenes = await RunnerContext.Instance.GetCombatScenes(ct);
-        if (_combatScenes == null)
+        // 检查是否在主界面或秘境
+        var ra = CaptureToRectArea();
+        bool isInMainUi = Bv.IsInMainUi(ra) || Bv.IsInDomain(ra);
+        
+        if (!isInMainUi)
         {
+            Logger.LogWarning("⚠️ [地图追踪] 当前不在主界面或秘境，请返回主界面");
+            Logger.LogInformation("等待10秒，请手动返回主界面...");
+            
+            // 等待10秒，每秒检查一次
+            for (int i = 0; i < 10; i++)
+            {
+                await Delay(1000, ct);
+                ra = CaptureToRectArea();
+                isInMainUi = Bv.IsInMainUi(ra) || Bv.IsInDomain(ra);
+                
+                if (isInMainUi)
+                {
+                    Logger.LogInformation("✅ [地图追踪] 已返回主界面");
+                    break;
+                }
+            }
+            
+            if (!isInMainUi)
+            {
+                Logger.LogError("❌ [地图追踪] 超时：未能返回主界面，任务终止");
+                return false;
+            }
+        }
+        
+        // 使用与冷却提示相同的方法：在当前场景直接识别队伍
+        _combatScenes = RunnerContext.Instance.TrySyncCombatScenesSilent();
+        if (_combatScenes == null || !_combatScenes.CheckTeamInitialized())
+        {
+            Logger.LogError("❌ [地图追踪] 队伍角色识别失败");
             return false;
         }
+        
+        var avatars = _combatScenes.GetAvatars();
+        Logger.LogInformation("✅ [地图追踪] 识别到 {Count} 个角色: {Names}", 
+            avatars.Count, string.Join(", ", avatars.Select(a => a.Name)));
 
         // û��ǿ�����õ�����£�ʹ�õ�ͼ׷���ڵ���������
         // ������������ΪҪͨ������ʶ�����õ����ս��
