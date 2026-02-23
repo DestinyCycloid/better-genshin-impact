@@ -1,4 +1,5 @@
 ﻿using BetterGenshinImpact.Core.Config;
+using BetterGenshinImpact.GameTask.AutoFight.Assets;
 using BetterGenshinImpact.GameTask.AutoFight.Model;
 using BetterGenshinImpact.GameTask.AutoFight.Script;
 using BetterGenshinImpact.Model;
@@ -137,10 +138,13 @@ public class OneKeyFightTask : Singleton<OneKeyFightTask>
     /// </summary>
     private Task FightTask(CancellationToken ct)
     {
-        // 强制使用"玛薇卡"的宏（测试模式）
-        Logger.LogWarning("⚠️ 测试模式：强制使用玛薇卡的宏");
-        
-        ExecuteMacro(ct);
+        // 异步执行，避免阻塞
+        Task.Run(async () =>
+        {
+            // 等待画面稳定
+            await Task.Delay(300);
+            ExecuteMacro(ct);
+        });
         
         return Task.CompletedTask;
     }
@@ -150,39 +154,134 @@ public class OneKeyFightTask : Singleton<OneKeyFightTask>
     /// </summary>
     private void ExecuteMacro(CancellationToken ct)
     {
-        if (_avatarMacros != null && _avatarMacros.Count > 0)
+        if (_avatarMacros == null || _avatarMacros.Count == 0)
         {
-            string targetAvatar = "玛薇卡";
-            if (!_avatarMacros.ContainsKey(targetAvatar))
+            Logger.LogError("❌ [一键宏] 未加载宏配置");
+            return;
+        }
+        
+        // 获取当前角色
+        string? targetAvatar = GetCurrentAvatar();
+        if (string.IsNullOrEmpty(targetAvatar))
+        {
+            Logger.LogError("❌ [一键宏] 无法识别当前角色");
+            return;
+        }
+        
+        if (!_avatarMacros.ContainsKey(targetAvatar))
+        {
+            Logger.LogWarning("⚠️ [一键宏] 未找到角色 {Avatar} 的宏配置", targetAvatar);
+            return;
+        }
+        
+        var commands = _avatarMacros[targetAvatar];
+        if (commands == null || commands.Count == 0)
+        {
+            Logger.LogWarning("⚠️ [一键宏] 角色 {Avatar} 的命令列表为空", targetAvatar);
+            return;
+        }
+        
+        Logger.LogInformation("✅ [一键宏] 执行角色 {Avatar} 的宏 ({Count} 条命令)", targetAvatar, commands.Count);
+        
+        // 创建一个临时的 CombatScenes 和 Avatar 对象来执行宏命令
+        var tempCombatScenes = new CombatScenes();
+        var tempAvatar = new Avatar(tempCombatScenes, targetAvatar, 1, new Rect(0, 0, 100, 100));
+        
+        int executedCount = 0;
+        foreach (var command in commands)
+        {
+            if (ct.IsCancellationRequested)
             {
-                Logger.LogError("未找到角色 {Avatar} 的宏配置", targetAvatar);
-                return;
+                Logger.LogInformation("⏸️ [一键宏] 宏执行被取消 ({Count}/{Total})", executedCount, commands.Count);
+                break;
+            }
+            try
+            {
+                command.Execute(tempAvatar);
+                executedCount++;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "❌ [一键宏] 执行命令失败");
+            }
+        }
+        
+        Logger.LogInformation("✅ [一键宏] 宏执行完成 ({Count}/{Total})", executedCount, commands.Count);
+    }
+    
+    /// <summary>
+    /// 获取当前激活的角色名称
+    /// </summary>
+    private string? GetCurrentAvatar()
+    {
+        try
+        {
+            // 同步队伍信息
+            _currentCombatScenes = RunnerContext.Instance.TrySyncCombatScenesSilent();
+            
+            if (_currentCombatScenes == null || !_currentCombatScenes.CheckTeamInitialized())
+            {
+                Logger.LogWarning("⚠️ [一键宏] 队伍识别失败");
+                return null;
             }
             
-            Logger.LogInformation("使用角色宏: {Avatar}", targetAvatar);
-            
-            var commands = _avatarMacros[targetAvatar];
-            if (commands != null && commands.Count > 0)
+            var avatars = _currentCombatScenes.GetAvatars();
+            if (avatars.Count == 0)
             {
-                // 创建一个临时的 CombatScenes 和 Avatar 对象来执行宏命令
-                var tempCombatScenes = new CombatScenes();
-                var tempAvatar = new Avatar(tempCombatScenes, targetAvatar, 1, new Rect(0, 0, 100, 100));
-                foreach (var command in commands)
+                Logger.LogWarning("⚠️ [一键宏] 未识别到任何角色");
+                return null;
+            }
+            
+            // 获取当前激活的角色索引
+            int activeIndex = -1;
+            bool isGamepadMode = Core.Simulator.Simulation.CurrentInputMode == Core.Simulator.InputMode.XInput;
+            var captureArea = CaptureToRectArea();
+            
+            if (isGamepadMode)
+            {
+                // 手柄模式：使用箭头检测（与冷却提示相同的方法）
+                var rectArray = AutoFightAssets.Instance.AvatarIndexRectListGamepad.ToArray();
+                var arrowRo = AutoFightAssets.Instance.CurrentAvatarThresholdGamepadForSkillCd;
+                
+                var curr = captureArea.Find(arrowRo);
+                if (!curr.IsEmpty())
                 {
-                    if (ct.IsCancellationRequested)
+                    for (int i = 0; i < rectArray.Length; i++)
                     {
-                        break;
-                    }
-                    try
-                    {
-                        command.Execute(tempAvatar);
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.LogError(ex, "执行宏命令失败: {Command}", command);
+                        int bottom1 = curr.Y + curr.Height;
+                        int bottom2 = rectArray[i].Y + rectArray[i].Height;
+                        bool intersects = !(bottom1 < rectArray[i].Y || bottom2 < curr.Y);
+                        
+                        if (intersects)
+                        {
+                            activeIndex = i + 1;
+                            break;
+                        }
                     }
                 }
             }
+            else
+            {
+                // 键鼠模式：使用完整的检测逻辑
+                var context = new AvatarActiveCheckContext();
+                activeIndex = _currentCombatScenes.GetActiveAvatarIndex(captureArea, context);
+            }
+            
+            if (activeIndex <= 0 || activeIndex > avatars.Count)
+            {
+                Logger.LogWarning("⚠️ [一键宏] 无法识别当前激活角色 (索引: {Index})", activeIndex);
+                return null;
+            }
+            
+            var currentAvatar = avatars[activeIndex - 1];
+            Logger.LogInformation("✅ [一键宏] 识别到当前角色: {Avatar}", currentAvatar.Name);
+            
+            return currentAvatar.Name;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "❌ [一键宏] 获取当前角色失败");
+            return null;
         }
     }
 
