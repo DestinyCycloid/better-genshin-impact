@@ -549,7 +549,12 @@ public class XInputOutput : IInputOutput
         
         try
         {
-            _logger.LogTrace("设置右摇杆: X={X}, Y={Y}", x, y);
+            // 计算百分比（用于日志显示）
+            float percentX = (x / 32767.0f) * 100.0f;
+            float percentY = (y / 32767.0f) * 100.0f;
+            
+            _logger.LogInformation("【SetRightStick】右摇杆: ({X}, {Y}) = ({PercentX:F1}%, {PercentY:F1}%)", 
+                x, y, percentX, percentY);
             
             _controller!.SetAxisValue(Xbox360Axis.RightThumbX, x);
             _controller.SetAxisValue(Xbox360Axis.RightThumbY, y);

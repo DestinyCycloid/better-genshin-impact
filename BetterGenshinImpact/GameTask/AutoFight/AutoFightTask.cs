@@ -25,6 +25,9 @@ using BetterGenshinImpact.GameTask.AutoPick.Assets;
 using BetterGenshinImpact.Core.Recognition;
 using BetterGenshinImpact.GameTask.Common.Element.Assets;
 using BetterGenshinImpact.GameTask.Common;
+using BetterGenshinImpact.Core.Recognition.OCR;
+using BetterGenshinImpact.GameTask.AutoFight.Assets;
+using BetterGenshinImpact.View.Drawable;
 
 namespace BetterGenshinImpact.GameTask.AutoFight;
 
@@ -267,7 +270,6 @@ public class AutoFightTask : ISoloTask
             throw new Exception("识别队伍角色失败");
         }*/
 
-
         // var actionSchedulerByCd = ParseStringToDictionary(_taskParam.ActionSchedulerByCd);
         var combatCommands = _combatScriptBag.FindCombatScript(combatScenes.GetAvatars());
         // 命令用到的角色名 筛选交集
@@ -293,6 +295,10 @@ public class AutoFightTask : ISoloTask
 
         Stopwatch checkFightFinishStopwatch = Stopwatch.StartNew();
         TimeSpan checkFightFinishTime = TimeSpan.FromSeconds(_finishDetectConfig.CheckTime); //检查战斗超时时间的超时时间
+
+        // 添加定期OCR检测计时器（每5秒检测一次"自动退出"）
+        Stopwatch ocrCheckStopwatch = Stopwatch.StartNew();
+        TimeSpan ocrCheckInterval = TimeSpan.FromSeconds(5); // 每5秒检测一次
 
 
         //战斗前检查，可做成配置
@@ -442,6 +448,39 @@ public class AutoFightTask : ISoloTask
                         #endregion
                         
                         command.Execute(combatScenes, lastCommand);
+                        
+                        // 定期OCR检测"自动退出"（每5秒检测一次）
+                        if (!fightEndFlag && _taskParam is { FightFinishDetectEnabled: true } && ocrCheckStopwatch.Elapsed > ocrCheckInterval)
+                        {
+                            ocrCheckStopwatch.Restart();
+                            
+                            try
+                            {
+                                using var quickRa = CaptureToRectArea();
+                                int centerX = quickRa.Width / 2;
+                                int lowerTargetY = quickRa.Height - quickRa.Height / 6;
+                                int halfWidth = 600;
+                                int halfHeight = 75;
+                                
+                                var ocrRect = new Rect(centerX - halfWidth, lowerTargetY - halfHeight, halfWidth * 2, halfHeight * 2);
+                                var quickEndTips = quickRa.DeriveCrop(ocrRect);
+                                var quickText = OcrFactory.Paddle.Ocr(quickEndTips.SrcMat);
+                                
+                                if (!string.IsNullOrWhiteSpace(quickText) && 
+                                    (quickText.Contains("自动退出") || quickText.Contains("退出") || 
+                                     quickText.Contains("Auto") || quickText.Contains("Leave") || 
+                                     quickText.Contains("Leaving")))
+                                {
+                                    Logger.LogInformation("识别到战斗结束（自动退出）");
+                                    fightEndFlag = true;
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.LogTrace(ex, "定期OCR检测失败");
+                            }
+                        }
+                        
                         //统计战斗人次
                         if (i == combatCommands.Count - 1 || command.Name != combatCommands[i + 1].Name)
                         {
@@ -807,25 +846,27 @@ public class AutoFightTask : ISoloTask
 
         if (!_finishDetectConfig.RotateFindEnemyEnabled)await Delay(delayTime, _ct);
         
+        using var ra = CaptureToRectArea();
+        
+        // 备用检测：编队界面检测（适用于大世界）
         // Logger.LogInformation("打开编队界面检查战斗是否结束，延时{detectDelayTime}毫秒检查", detectDelayTime);
         Logger.LogInformation("打开编队界面检查战斗是否结束");
-        // 最终方案确认战斗结束
         Simulation.SendInput.SimulateAction(GIActions.OpenPartySetupScreen);
         await Delay(detectDelayTime, _ct);
         
-        using var ra = CaptureToRectArea();
+        using var ra2 = CaptureToRectArea();
         //判断整个界面是否有红色色块，如果有，则战继续，否则战斗结束
         // 只提取橙色
         
-        var b3 = ra.SrcMat.At<Vec3b>(50, 790); //进度条颜色
-        var whiteTile = ra.SrcMat.At<Vec3b>(50, 768); //白块
+        var b3 = ra2.SrcMat.At<Vec3b>(50, 790); //进度条颜色
+        var whiteTile = ra2.SrcMat.At<Vec3b>(50, 768); //白块
         Simulation.SendInput.SimulateAction(GIActions.Drop);
         if (IsWhite(whiteTile.Item2, whiteTile.Item1, whiteTile.Item0) &&
             IsYellow(b3.Item2, b3.Item1,
                 b3.Item0) /* AreDifferencesWithinBounds(_finishDetectConfig.BattleEndProgressBarColor, (b3.Item0, b3.Item1, b3.Item2), _finishDetectConfig.BattleEndProgressBarColorTolerance)*/
            )
         {
-            Logger.LogInformation("识别到战斗结束");
+            Logger.LogInformation("识别到战斗结束（编队界面）");
             //取消正在进行的换队
             Simulation.SendInput.SimulateAction(GIActions.OpenPartySetupScreen);
             return true;

@@ -41,6 +41,7 @@ public class AutoFightAssets : BaseAssets<AutoFightAssets>
     public Rect QRect;
     public Rect ZCooldownRect;
     public Rect EndTipsUpperRect; // 挑战达成提示
+    public RecognitionObject EndTipsUpperRo; // 挑战达成提示识别对象（用于绘制调试框）
     public Rect EndTipsRect;
     public RecognitionObject WandererIconRa;
     public RecognitionObject WandererIconNoActiveRa;
@@ -174,9 +175,30 @@ public class AutoFightAssets : BaseAssets<AutoFightAssets>
         // 小道具位置 1920-133,800,60,50
         GadgetRect = new Rect(CaptureRect.Width - (int)(133 * AssetScale), (int)(800 * AssetScale),
             (int)(60 * AssetScale), (int)(50 * AssetScale));
-        // 结束提示从中间开始找相对位置
-        EndTipsUpperRect = new Rect(CaptureRect.Width / 2 - (int)(100 * AssetScale), (int)(243 * AssetScale),
-            (int)(200 * AssetScale), (int)(50 * AssetScale));
+        // 挑战达成提示：固定在屏幕上方 1/5 位置
+        int centerX = CaptureRect.Width / 2;
+        int targetY = CaptureRect.Height / 5;
+        
+        // 扩大识别区域：宽度从800增加到1200，高度从100增加到150
+        int halfWidth = (int)(600 * AssetScale);
+        int halfHeight = (int)(75 * AssetScale);
+        
+        EndTipsUpperRect = new Rect(
+            centerX - halfWidth, 
+            targetY - halfHeight,
+            halfWidth * 2, 
+            halfHeight * 2);
+        
+        // 创建挑战达成检测区域的识别对象（用于绘制调试框）
+        EndTipsUpperRo = new RecognitionObject
+        {
+            Name = "ChallengeCompleteDetection",
+            RecognitionType = RecognitionTypes.Ocr,
+            RegionOfInterest = EndTipsUpperRect,
+            DrawOnWindow = true,
+            DrawOnWindowPen = new System.Drawing.Pen(System.Drawing.Color.Yellow, 3)
+        };
+        
         EndTipsRect = new Rect(CaptureRect.Width / 2 - (int)(200 * AssetScale), CaptureRect.Height - (int)(160 * AssetScale),
             (int)(400 * AssetScale), (int)(80 * AssetScale));
 

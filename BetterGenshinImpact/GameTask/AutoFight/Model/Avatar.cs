@@ -87,6 +87,36 @@ public class Avatar
     /// </summary>
     public CombatScenes CombatScenes { get; set; }
     
+    /// <summary>
+    /// 恰斯卡是否处于E技能飞行状态
+    /// </summary>
+    private bool _chascaInFlightMode = false;
+    
+    /// <summary>
+    /// 恰斯卡进入飞行状态的时间
+    /// </summary>
+    private DateTime _chascaFlightStartTime = DateTime.MinValue;
+    
+    /// <summary>
+    /// 恰斯卡E技能飞行持续时间（秒）
+    /// </summary>
+    private const double ChascaFlightDuration = 10.0;
+    
+    /// <summary>
+    /// 检查恰斯卡飞行状态是否超时，如果超时则自动重置
+    /// </summary>
+    private void CheckChascaFlightTimeout()
+    {
+        if (Name == "恰斯卡" && _chascaInFlightMode)
+        {
+            var elapsed = (DateTime.UtcNow - _chascaFlightStartTime).TotalSeconds;
+            if (elapsed >= ChascaFlightDuration)
+            {
+                _chascaInFlightMode = false;
+                Logger.LogInformation("恰斯卡飞行状态超时（{Elapsed:F1}秒），自动退出飞行状态", elapsed);
+            }
+        }
+    }
 
     public Avatar(CombatScenes combatScenes, string name, int index, Rect nameRect, double manualSkillCd = -1)
     {
@@ -275,6 +305,13 @@ public class Avatar
 
     private void SimulateSwitchAction(int index)
     {
+        // 切换角色时，重置恰斯卡的飞行状态
+        if (Name == "恰斯卡" && _chascaInFlightMode)
+        {
+            _chascaInFlightMode = false;
+            Logger.LogInformation("恰斯卡退出飞行状态");
+        }
+        
         Simulation.SimulateAction(GIActions.Drop); //反正会重试就不等落地了
         switch (index)
         {
@@ -411,6 +448,23 @@ public class Avatar
     /// <param name="ms">攻击时长，建议是200的倍数</param>
     public void Attack(int ms = 0)
     {
+        // 恰斯卡特殊处理：检查飞行状态是否超时
+        if (Name == "恰斯卡")
+        {
+            CheckChascaFlightTimeout();
+            Logger.LogInformation("【恰斯卡Attack】当前飞行状态: {InFlight}", _chascaInFlightMode);
+        }
+        
+        // 根据角色状态选择攻击按键
+        GIActions attackAction = (Name == "恰斯卡" && _chascaInFlightMode) 
+            ? GIActions.SwitchAimingMode  // 恰斯卡飞行状态：LT键
+            : GIActions.NormalAttack;      // 正常状态：X键
+        
+        if (Name == "恰斯卡")
+        {
+            Logger.LogInformation("【恰斯卡Attack】选择的攻击按键: {Action}", attackAction);
+        }
+        
         while (ms >= 0)
         {
             if (Ct is { IsCancellationRequested: true })
@@ -418,7 +472,24 @@ public class Avatar
                 return;
             }
 
-            Simulation.SimulateAction(GIActions.NormalAttack);
+            // 恰斯卡在攻击过程中检查超时
+            if (Name == "恰斯卡" && _chascaInFlightMode)
+            {
+                CheckChascaFlightTimeout();
+                // 如果超时，更新攻击按键
+                if (!_chascaInFlightMode)
+                {
+                    Logger.LogInformation("恰斯卡飞行状态已结束，切换回普通攻击");
+                    attackAction = GIActions.NormalAttack;
+                }
+            }
+
+            if (Name == "恰斯卡" && ms == 0)
+            {
+                Logger.LogInformation("【恰斯卡Attack】执行攻击动作: {Action}", attackAction);
+            }
+
+            Simulation.SimulateAction(attackAction);
             ms -= 200;
             Sleep(200, Ct);
         }
@@ -429,6 +500,13 @@ public class Avatar
     /// </summary>
     public void UseSkill(bool hold = false)
     {
+        // 恰斯卡特殊处理：使用E技能前先重置飞行状态（防止状态残留）
+        if (Name == "恰斯卡" && _chascaInFlightMode)
+        {
+            _chascaInFlightMode = false;
+            Logger.LogInformation("恰斯卡重置飞行状态");
+        }
+        
         for (var i = 0; i < 1; i++)
         {
             if (Ct is { IsCancellationRequested: true })
@@ -480,6 +558,15 @@ public class Avatar
             else
             {
                 Simulation.SimulateAction(GIActions.ElementalSkill);
+                
+                // 恰斯卡特殊处理：使用E技能后进入飞行状态
+                if (Name == "恰斯卡")
+                {
+                    _chascaInFlightMode = true;
+                    _chascaFlightStartTime = DateTime.UtcNow;
+                    Logger.LogInformation("【恰斯卡UseSkill】设置飞行状态为true，开始时间={Time}，普攻将使用LT键（持续{Duration}秒）", 
+                        _chascaFlightStartTime.ToString("HH:mm:ss.fff"), ChascaFlightDuration);
+                }
             }
 
             Sleep(200, Ct);
@@ -832,14 +919,37 @@ public class Avatar
         }
         else if (Name == "恰斯卡")
         {
+            // 恰斯卡特殊处理：检查飞行状态
+            CheckChascaFlightTimeout();
+            
+            // 根据飞行状态选择按键
+            GIActions attackAction = _chascaInFlightMode 
+                ? GIActions.SwitchAimingMode  // 飞行状态：LT键
+                : GIActions.NormalAttack;      // 正常状态：X键
+            
             var dpi = TaskContext.Instance().DpiScale;
-            Simulation.SendInput.SimulateAction(GIActions.NormalAttack, KeyType.KeyDown);
+            Simulation.SendInput.SimulateAction(attackAction, KeyType.KeyDown);
             int tick = -4; // 起飞那一刻需要多一点点时间用来矫正视角高度
             while (ms >= 0)
             {
                 if (Ct is { IsCancellationRequested: true })
                 {
+                    Simulation.SendInput.SimulateAction(attackAction, KeyType.KeyUp);
                     return;
+                }
+
+                // 检查飞行状态是否超时
+                if (_chascaInFlightMode)
+                {
+                    CheckChascaFlightTimeout();
+                    // 如果超时，需要释放当前按键并切换
+                    if (!_chascaInFlightMode)
+                    {
+                        Logger.LogInformation("恰斯卡飞行状态已结束（蓄力攻击中），切换回普通攻击");
+                        Simulation.SendInput.SimulateAction(attackAction, KeyType.KeyUp);
+                        attackAction = GIActions.NormalAttack;
+                        Simulation.SendInput.SimulateAction(attackAction, KeyType.KeyDown);
+                    }
                 }
 
                 // 恰在蓄力时转得越快越容易把视角趋向于水平
@@ -879,14 +989,32 @@ public class Avatar
                     rateY = 0;
                 }
 
-                Simulation.SendInput.Mouse.MoveMouseBy((int)(rateX * 50 * dpi), (int)(rateY * 50 * dpi));
+                // 在手柄模式下使用右摇杆，键鼠模式下使用鼠标
+                if (Simulation.CurrentInputMode == InputMode.XInput)
+                {
+                    // 手柄模式：使用右摇杆控制视角
+                    short stickX = (short)(rateX * 50 * 32767 / 1000); // 转换为摇杆值
+                    short stickY = (short)(rateY * 50 * 32767 / 1000);
+                    Simulation.SetRightStick(stickX, stickY);
+                }
+                else
+                {
+                    // 键鼠模式：使用鼠标移动
+                    Simulation.SendInput.Mouse.MoveMouseBy((int)(rateX * 50 * dpi), (int)(rateY * 50 * dpi));
+                }
 
                 tick = (tick + 1) % 100;
                 Sleep(25);
                 ms -= 25;
             }
 
-            Simulation.SendInput.SimulateAction(GIActions.NormalAttack, KeyType.KeyUp);
+            Simulation.SendInput.SimulateAction(attackAction, KeyType.KeyUp);
+            
+            // 重置摇杆
+            if (Simulation.CurrentInputMode == InputMode.XInput)
+            {
+                Simulation.SetRightStick(0, 0);
+            }
         }
         else
         {
@@ -906,7 +1034,20 @@ public class Avatar
             // 手柄模式：映射到手柄按键
             if (key == "left")
             {
-                // 左键 -> X 键（普通攻击）
+                // 恰斯卡特殊处理：检查飞行状态
+                if (Name == "恰斯卡")
+                {
+                    CheckChascaFlightTimeout();
+                    if (_chascaInFlightMode)
+                    {
+                        // 飞行状态：左键 -> LT（左扳机）
+                        Logger.LogInformation("【恰斯卡MouseDown】飞行状态，使用LT键");
+                        Simulation.SetLeftTrigger(255);
+                        return;
+                    }
+                }
+                
+                // 正常状态：左键 -> X 键（普通攻击）
                 Simulation.SetGamepadButtonDown(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.X);
             }
             else if (key == "right")
@@ -943,7 +1084,20 @@ public class Avatar
             // 手柄模式：映射到手柄按键
             if (key == "left")
             {
-                // 左键 -> X 键（普通攻击）
+                // 恰斯卡特殊处理：检查飞行状态
+                if (Name == "恰斯卡")
+                {
+                    CheckChascaFlightTimeout();
+                    if (_chascaInFlightMode)
+                    {
+                        // 飞行状态：释放LT（左扳机）
+                        Logger.LogInformation("【恰斯卡MouseUp】飞行状态，释放LT键");
+                        Simulation.SetLeftTrigger(0);
+                        return;
+                    }
+                }
+                
+                // 正常状态：左键 -> X 键（普通攻击）
                 Simulation.SetGamepadButtonUp(Nefarius.ViGEm.Client.Targets.Xbox360.Xbox360Button.X);
             }
             else if (key == "right")
@@ -1051,6 +1205,8 @@ public class Avatar
 
     public void KeyPress(string key)
     {
+        Logger.LogInformation("【KeyPress】角色: {Name}, 按键: {Key}", Name, key);
+        
         var vk = KeyBindingsSettingsPageViewModel.MappingKey(User32Helper.ToVk(key));
         switch (key)
         {
@@ -1061,7 +1217,9 @@ public class Avatar
                 Simulation.SendInput.Mouse.RightButtonClick();
                 break;
             case "VK_MBUTTON":
-                Simulation.SendInput.Mouse.MiddleButtonClick();
+                // 鼠标中键（视角回正）：自动适配输入模式
+                Logger.LogInformation("【KeyPress】检测到VK_MBUTTON，调用ResetCamera()");
+                Simulation.ResetCamera();
                 break;
             case "VK_XBUTTON1":
                 Simulation.SendInput.Mouse.XButtonClick(0x0001);

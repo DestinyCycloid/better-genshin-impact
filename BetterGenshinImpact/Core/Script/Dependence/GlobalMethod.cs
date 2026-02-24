@@ -6,6 +6,7 @@ using BetterGenshinImpact.Helpers;
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using BetterGenshinImpact.GameTask.AutoFight.Model;
@@ -177,7 +178,46 @@ public class GlobalMethod
         var realDpi = TaskContext.Instance().DpiScale;
         x = (int)(x * realDpi / _dpi);
         y = (int)(y * realDpi / _dpi);
-        Simulation.SendInput.Mouse.MoveMouseBy(x, y);
+        
+        // 在手柄模式下，使用右摇杆控制镜头
+        if (Simulation.CurrentInputMode == InputMode.XInput)
+        {
+            // 计算需要移动的距离，转换为持续时间
+            // 摇杆推到底时，视角移动速度是固定的，需要根据距离计算持续时间
+            
+            // 计算移动距离（像素）
+            double distance = Math.Sqrt(x * x + y * y);
+            
+            // 根据距离计算持续时间（毫秒）
+            // 假设摇杆推到底时，每秒可以移动约 2000 像素
+            const double pixelsPerSecond = 2000.0;
+            int durationMs = (int)(distance / pixelsPerSecond * 1000);
+            
+            // 限制最小和最大持续时间
+            durationMs = Math.Clamp(durationMs, 50, 1000);
+            
+            // 计算摇杆方向（归一化）
+            double length = Math.Sqrt(x * x + y * y);
+            if (length > 0)
+            {
+                double normalizedX = x / length;
+                double normalizedY = y / length;
+                
+                // 摇杆推到最大值
+                // 注意：Y 轴需要反转！鼠标向下（正值）= 摇杆向下（负值）
+                short stickX = (short)(normalizedX * 32767);
+                short stickY = (short)(-normalizedY * 32767);  // Y 轴反转
+                
+                Simulation.SetRightStick(stickX, stickY);
+                Thread.Sleep(durationMs);
+                Simulation.SetRightStick(0, 0);
+            }
+        }
+        else
+        {
+            // 键鼠模式
+            Simulation.SendInput.Mouse.MoveMouseBy(x, y);
+        }
     }
 
     public static void MoveMouseTo(int x, int y)

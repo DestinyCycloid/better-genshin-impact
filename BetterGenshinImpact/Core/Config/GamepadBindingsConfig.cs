@@ -130,6 +130,12 @@ public partial class GamepadBindingsConfig : ObservableObject
     [ObservableProperty]
     private Xbox360Button _openMap = Xbox360Button.Back;
 
+    /// <summary>
+    /// 元素视野/视角回正（RS按钮）
+    /// </summary>
+    [ObservableProperty]
+    private Xbox360Button _elementalSight = Xbox360Button.RightThumb;
+
     #endregion
 
     #region 摇杆和扳机配置
@@ -202,6 +208,7 @@ public partial class GamepadBindingsConfig : ObservableObject
             GIActions.SwitchMember3 => SwitchMember3,
             GIActions.SwitchMember4 => SwitchMember4,
             GIActions.SwitchMember5 => SwitchMember5,
+            GIActions.ElementalSight => GamepadButtonMapping.FromButton(ElementalSight), // RS按钮（视角回正）
             GIActions.ShortcutWheel => null,
             GIActions.OpenPaimonMenu => null,
             GIActions.OpenInventory => null,

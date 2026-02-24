@@ -1,0 +1,26 @@
+// 作者：Ukumbuko
+// 描述：恰斯卡战斗脚本
+// 版本：v1.0
+// 可根据自己的角色替换盾位, 如果是满命恰斯卡可以从一直长按左键修改为分多长按左键
+
+// 盾位
+伊涅芙 e
+// 水位
+芙宁娜 e,q
+// 减抗位
+希诺宁 e,attack,q,attack
+// 确定方向
+恰斯卡 attack,wait(0.2),keypress(VK_MBUTTON),keypress(VK_MBUTTON)
+// 清理敌人
+恰斯卡 e,wait(0.2),mousedown(left),wait(0.2), moveby(160,1200),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),mouseup(left),wait(0.2),e,wait(0.2),q
+
+// 盾位
+伊涅芙 e
+// 水位
+芙宁娜 e,q
+// 减抗位
+希诺宁 e,attack,q,attack
+// 确定方向
+恰斯卡 attack,wait(0.2),keypress(VK_MBUTTON),keypress(VK_MBUTTON)
+// 清理敌人
+恰斯卡 e,wait(0.2),mousedown(left),wait(0.2), moveby(160,1200),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),moveby(220,10),wait(0.5),mouseup(left),wait(0.2),e,wait(0.2),q

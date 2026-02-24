@@ -135,6 +135,27 @@ public class Simulation
     }
 
     /// <summary>
+    /// 视角回正/重置镜头
+    /// 键鼠模式：鼠标中键点击
+    /// 手柄模式：RS按钮点击（右摇杆按下）
+    /// </summary>
+    public static void ResetCamera()
+    {
+        if (Router.CurrentMode == InputMode.XInput)
+        {
+            // 手柄模式：按下并释放RS按钮
+            TaskControl.Logger.LogInformation("【ResetCamera】手柄模式：使用RS按钮重置镜头");
+            SimulateAction(GIActions.ElementalSight, KeyType.KeyPress);
+        }
+        else
+        {
+            // 键鼠模式：鼠标中键点击
+            TaskControl.Logger.LogInformation("【ResetCamera】键鼠模式：使用鼠标中键重置镜头");
+            SendInput.Mouse.MiddleButtonClick();
+        }
+    }
+
+    /// <summary>
     /// 内部方法：直接释放所有键盘按键（用于 KeyboardMouseOutput，避免循环调用）
     /// </summary>
     internal static void ReleaseAllKeyboardKeys()
