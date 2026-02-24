@@ -211,20 +211,40 @@ public partial class AutoPickTrigger : ITaskTrigger
 
         var speedTimer = new SpeedTimer();
 
-        // 先尝试识别F键（键盘模式）
-        using var foundRectArea = content.CaptureRectArea.Find(_pickRo);
-
-        // 如果没找到F键，尝试识别Y按钮（手柄模式）
+        // 根据当前输入模式决定识别哪个按键
+        var currentInputMode = TaskContext.Instance().Config.InputMode;
+        Region? foundRectArea = null;
         Region? foundGamepadButton = null;
-        if (foundRectArea.IsEmpty())
+        bool isGamepadMode = currentInputMode == InputMode.XInput;
+
+        if (isGamepadMode)
         {
+            // 手柄模式：直接识别Y按钮
             foundGamepadButton = content.CaptureRectArea.Find(_autoPickAssets.YRo);
-                
             if (foundGamepadButton.IsEmpty())
             {
                 foundGamepadButton?.Dispose();
                 
-                // 没有识别到F键或Y按钮，先判断是否有滚轮图标信息
+                // 没有识别到Y按钮，判断是否有滚轮图标
+                if (HasScrollIcon(content.CaptureRectArea))
+                {
+                    // 滚轮下
+                    Simulation.SendInput.Mouse.VerticalScroll(2);
+                    Thread.Sleep(50);
+                }
+
+                return;
+            }
+        }
+        else
+        {
+            // 键盘模式：识别F键
+            foundRectArea = content.CaptureRectArea.Find(_pickRo);
+            if (foundRectArea.IsEmpty())
+            {
+                foundRectArea?.Dispose();
+                
+                // 没有识别到F键，判断是否有滚轮图标
                 if (HasScrollIcon(content.CaptureRectArea))
                 {
                     // 滚轮下
@@ -236,16 +256,12 @@ public partial class AutoPickTrigger : ITaskTrigger
             }
         }
 
-        var activeRectArea = foundRectArea.IsEmpty() ? foundGamepadButton! : foundRectArea;
-        var isGamepadMode = foundRectArea.IsEmpty();
+        var activeRectArea = isGamepadMode ? foundGamepadButton! : foundRectArea!;
         
         speedTimer.Record($"识别到拾取键");
 
         // 清理资源
-        if (isGamepadMode && foundGamepadButton != null)
-        {
-            using var _ = foundGamepadButton;
-        }
+        using var _disposeRegion = isGamepadMode ? foundGamepadButton : foundRectArea;
 
         if (_externalConfig is { ForceInteraction: true })
         {

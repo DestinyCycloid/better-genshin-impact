@@ -55,10 +55,9 @@ public partial class TriggerSettingsPageViewModel : ViewModel
         _navigationService = navigationService;
         _hangoutBranches = HangoutConfig.Instance.HangoutOptionsTitleList;
 
-        _pickButtonNames = new List<string> { "F", "E", "G" };
+        _pickButtonNames = new List<string> { "F", "E", "G", "手柄Y键" };
         if (!string.IsNullOrEmpty(Config.AutoPickConfig.PickKey)
-            && Config.AutoPickConfig.PickKey.Length == 1
-            && char.IsUpper(Config.AutoPickConfig.PickKey[0])
+            && Config.AutoPickConfig.PickKey.Length >= 1
             && !_pickButtonNames.Contains(Config.AutoPickConfig.PickKey))
         {
             _pickButtonNames.Add(Config.AutoPickConfig.PickKey);

@@ -5,6 +5,10 @@
                          "turnAroundToggleHotkey":  "LB+A",
                          "turnAroundToggleHotkeyType":  "GamepadMonitor"
                      },
+    "autoPickConfig":  {
+                           "enabled":  true,
+                           "pickKey":  "手柄Y键"
+                       },
     "macroConfig":  {
                         "combatMacroEnabled":  true,
                         "combatMacroHotkeyMode":  "触发"
